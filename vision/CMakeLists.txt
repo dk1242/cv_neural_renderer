@@ -2,9 +2,12 @@ add_library(vision STATIC)
 
 target_sources(vision
     PRIVATE
+    src/convolution.cpp
     src/gaussian.cpp
     src/sobel.cpp
     src/canny.cpp
+    src/visualizer.cpp
+    src/harris.cpp
 )
 
 target_include_directories(vision
