@@ -1,0 +1,1 @@
+#include "vision/hamming.hpp"
