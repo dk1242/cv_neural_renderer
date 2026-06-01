@@ -8,6 +8,7 @@ target_sources(vision
     src/canny.cpp
     src/visualizer.cpp
     src/harris.cpp
+    src/fast.cpp
 )
 
 target_include_directories(vision

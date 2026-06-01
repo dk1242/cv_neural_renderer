@@ -3,6 +3,7 @@
 #include "vision/visualizer.h"
 #include "vision/canny.hpp"
 #include "vision/harris.hpp"
+#include "vision/fast.hpp"
 
 using namespace vision;
 
@@ -40,16 +41,19 @@ int main()
         }
 
         // CannyResult result = vision::CannyDetector().detectDebug(gray, 10.0f, 100.0f);
-        vision::HarrisCornerDetector harrisDetector;
-        cv::Mat harrisResponse = harrisDetector.computeResponse(gray);
-        std::vector<cv::Point> corners = harrisDetector.detectCorners(harrisResponse, 0.01f);
-        cv::Mat visualizedCorners = harrisDetector.visualizeCorners(frame, corners);
-
+        // vision::HarrisCornerDetector harrisDetector;
+        // cv::Mat harrisResponse = harrisDetector.computeResponse(gray);
+        // std::vector<cv::Point> corners = harrisDetector.detectCorners(harrisResponse, 0.01f);
+        // cv::Mat visualizedHarrisCorners = harrisDetector.visualizeCorners(frame, corners);
+        
+        std::vector<vision::KeyPoint> fastCorners = vision::FastCornerDetector().detect(gray);
+        cv::Mat visualizedFastCorners = vision::FastCornerDetector().visualizeCorners(frame, fastCorners);
         vision::Visualizer visualizer;
         // visualizer.display(result.thresholded, "Thresholded");
         // visualizer.display(result.edges, "Edges");
-        visualizer.display(harrisResponse, "Harris Response");
-        visualizer.display(visualizedCorners, "Harris Corners");
+        // visualizer.display(harrisResponse, "Harris Response");
+        // visualizer.display(visualizedHarrisCorners, "Harris Corners");
+        visualizer.display(visualizedFastCorners, "FAST Corners");
 
         // cv::imshow("Camera", result.edges);
 
