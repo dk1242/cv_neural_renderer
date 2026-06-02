@@ -9,6 +9,8 @@ target_sources(vision
     src/visualizer.cpp
     src/harris.cpp
     src/fast.cpp
+    src/image_pyramid.cpp
+    src/orb.cpp
 )
 
 target_include_directories(vision

@@ -4,6 +4,8 @@
 #include "vision/canny.hpp"
 #include "vision/harris.hpp"
 #include "vision/fast.hpp"
+#include "vision/image_pyramid.h"
+#include "vision/orb.hpp"
 
 using namespace vision;
 
@@ -22,6 +24,8 @@ int main()
 
     cv::Mat frame, gray, blurred, edges, display;
 
+    vision::ImagePyramid pyramid;
+    vision::OrbExtractor orbExtractor;
     while (true)
     {
         cap >> frame;
@@ -45,15 +49,30 @@ int main()
         // cv::Mat harrisResponse = harrisDetector.computeResponse(gray);
         // std::vector<cv::Point> corners = harrisDetector.detectCorners(harrisResponse, 0.01f);
         // cv::Mat visualizedHarrisCorners = harrisDetector.visualizeCorners(frame, corners);
-        
-        std::vector<vision::KeyPoint> fastCorners = vision::FastCornerDetector().detect(gray);
-        cv::Mat visualizedFastCorners = vision::FastCornerDetector().visualizeCorners(frame, fastCorners);
-        vision::Visualizer visualizer;
-        // visualizer.display(result.thresholded, "Thresholded");
-        // visualizer.display(result.edges, "Edges");
-        // visualizer.display(harrisResponse, "Harris Response");
-        // visualizer.display(visualizedHarrisCorners, "Harris Corners");
-        visualizer.display(visualizedFastCorners, "FAST Corners");
+
+        auto levels = pyramid.build(gray, 1, 1.2f);
+        for (int i = 0; i < levels.size(); ++i)
+        {
+            const auto &level = levels[i];
+            std::vector<vision::KeyPoint> corners = vision::FastCornerDetector().detect(level.image);
+            for (auto &kp : corners)
+                kp.octave = i;
+            // cv::Mat visualizedCorners = vision::FastCornerDetector().visualizeCorners(level.image, corners);
+            orbExtractor.computeOrientations(level.image, corners);
+            cv::Mat visualizedCorners = orbExtractor.visualizeArrows(frame, corners);
+            cv::Mat descriptors = orbExtractor.visualizeDescriptorPattern(frame, corners);
+            vision::Visualizer visualizer;
+            visualizer.display(visualizedCorners, "FAST Corners - Level " + std::to_string(i));
+            visualizer.display(descriptors, "ORB Descriptors - Level " + std::to_string(i));
+        }
+        // std::vector<vision::KeyPoint> fastCorners = vision::FastCornerDetector().detect(gray);
+        // cv::Mat visualizedFastCorners = vision::FastCornerDetector().visualizeCorners(frame, fastCorners);
+        // vision::Visualizer visualizer;
+        // // visualizer.display(result.thresholded, "Thresholded");
+        // // visualizer.display(result.edges, "Edges");
+        // // visualizer.display(harrisResponse, "Harris Response");
+        // // visualizer.display(visualizedHarrisCorners, "Harris Corners");
+        // visualizer.display(visualizedFastCorners, "FAST Corners");
 
         // cv::imshow("Camera", result.edges);
 

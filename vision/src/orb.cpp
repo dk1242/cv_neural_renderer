@@ -1,1 +1,164 @@
 #include "vision/orb.hpp"
+#include <algorithm>
+#include <bitset>
+#include <random>
+#include <iostream>
+
+vision::OrbExtractor::OrbExtractor()
+{
+    std::mt19937 rng(42);
+    std::uniform_int_distribution<int> dist(-15, 15);
+    for (int i = 0; i < 256; ++i)
+    {
+        vision::OrbExtractor::PointPair pair;
+        pair.p = cv::Point2f(static_cast<float>(dist(rng)),
+                             static_cast<float>(dist(rng)));
+        pair.q = cv::Point2f(static_cast<float>(dist(rng)),
+                             static_cast<float>(dist(rng)));
+        m_pattern.push_back(pair);
+    }
+}
+
+float vision::OrbExtractor::computeOrientation(const cv::Mat &image, const vision::KeyPoint &kp) const
+{
+    float m00 = 0.0f, m10 = 0.0f, m01 = 0.0f;
+    for (int y = -8; y <= 8; ++y)
+    {
+        for (int x = -8; x <= 8; ++x)
+        {
+            int pixelValue = image.at<uchar>(kp.position.y + y, kp.position.x + x);
+            m00 += pixelValue;
+            m10 += x * pixelValue;
+            m01 += y * pixelValue;
+        }
+    }
+    if (m00 == 0.0f)
+    {
+        return 0.0f;
+    }
+    float cx = m10 / m00;
+    float cy = m01 / m00;
+
+    return std::atan2(cy, cx);
+}
+
+cv::Point2f vision::OrbExtractor::rotatePoint(const cv::Point2f &point, float cosA, float sinA) const
+{
+    return cv::Point2f(
+        point.x * cosA - point.y * sinA,
+        point.x * sinA + point.y * cosA);
+}
+
+uint8_t vision::OrbExtractor::sampleIntensity(const cv::Mat &image, const cv::Point2f &point) const
+{
+    int x = static_cast<int>(std::round(point.x));
+    int y = static_cast<int>(std::round(point.y));
+    if (x < 0 || x >= image.cols || y < 0 || y >= image.rows)
+    {
+        return 0;
+    }
+    return image.at<uchar>(y, x);
+}
+
+std::array<uint8_t, 32> vision::OrbExtractor::computeDescriptor(const cv::Mat &image, const KeyPoint &kp) const
+{
+    std::array<uint8_t, 32> descriptor = {0};
+    float angleRad = kp.angle;
+    float cosA = std::cos(angleRad);
+    float sinA = std::sin(angleRad);
+    for (size_t i = 0; i < m_pattern.size(); ++i)
+    {
+        cv::Point2f rotatedP = rotatePoint(m_pattern[i].p, cosA, sinA);
+        cv::Point2f rotatedQ = rotatePoint(m_pattern[i].q, cosA, sinA);
+
+        cv::Point2f center(static_cast<float>(kp.position.x),
+                           static_cast<float>(kp.position.y));
+        cv::Point2f sampleP = center + rotatedP;
+        cv::Point2f sampleQ = center + rotatedQ;
+
+        uint8_t intensityP = sampleIntensity(image, sampleP);
+        uint8_t intensityQ = sampleIntensity(image, sampleQ);
+
+        if (intensityP < intensityQ)
+        {
+            descriptor[i / 8] |= (1 << (i % 8));
+        }
+    }
+    return descriptor;
+}
+
+void vision::OrbExtractor::computeOrientations(const cv::Mat &image, std::vector<vision::KeyPoint> &keypoints) const
+{
+    for (auto &kp : keypoints)
+    {
+        if (kp.position.x < 8 ||
+            kp.position.x >= image.cols - 8 ||
+            kp.position.y < 8 ||
+            kp.position.y >= image.rows - 8)
+        {
+            continue;
+        }
+        kp.angle = computeOrientation(image, kp);
+    }
+}
+
+std::vector<vision::OrbDescriptor> vision::OrbExtractor::computeDescriptors(
+    const cv::Mat &image,
+    const std::vector<vision::KeyPoint> &keypoints) const
+{
+    std::vector<vision::OrbDescriptor> descriptors;
+    for (size_t i = 0; i < keypoints.size(); ++i)
+    {
+        auto descriptor = computeDescriptor(image, keypoints[i]);
+        descriptors.push_back(descriptor);
+    }
+    return descriptors;
+}
+
+cv::Mat vision::OrbExtractor::visualizeArrows(const cv::Mat &image, const std::vector<vision::KeyPoint> &keypoints) const
+{
+    cv::Mat out;
+    if (image.channels() == 1)
+        cv::cvtColor(image, out, cv::COLOR_GRAY2BGR);
+    else
+        out = image.clone();
+
+    for (const auto &kp : keypoints)
+    {
+        float angleRad = kp.angle;
+        cv::Point2f end(kp.position.x + 20.0f * std::cos(angleRad),
+                        kp.position.y + 20.0f * std::sin(angleRad));
+        cv::arrowedLine(out, kp.position, end, cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
+    }
+    return out;
+}
+
+cv::Mat vision::OrbExtractor::visualizeDescriptorPattern(const cv::Mat &image, const std::vector<vision::KeyPoint> &keypoints) const
+{
+    cv::Mat out;
+    if (image.channels() == 1)
+        cv::cvtColor(image, out, cv::COLOR_GRAY2BGR);
+    else
+        out = image.clone();
+    for (const auto &kp : keypoints)
+    {
+        float angleRad = kp.angle;
+        float cosA = std::cos(angleRad);
+        float sinA = std::sin(angleRad);
+        for (size_t i = 0; i < m_pattern.size(); ++i)
+        {
+            cv::Point2f rotatedP = rotatePoint(m_pattern[i].p, cosA, sinA);
+            cv::Point2f rotatedQ = rotatePoint(m_pattern[i].q, cosA, sinA);
+
+            cv::Point2f center(static_cast<float>(kp.position.x),
+                               static_cast<float>(kp.position.y));
+            cv::Point2f sampleP = center + rotatedP;
+            cv::Point2f sampleQ = center + rotatedQ;
+
+            // cv::circle(out, sampleP, 2, cv::Scalar(0, 255, 0), -1);
+            // cv::circle(out, sampleQ, 2, cv::Scalar(0, 0, 255), -1);
+            cv::line(out, sampleP, sampleQ, cv::Scalar(0, 255, 0), 1, cv::LINE_AA);
+        }
+    }
+    return out;
+}

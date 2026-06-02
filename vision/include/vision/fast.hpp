@@ -8,7 +8,9 @@ namespace vision
     struct KeyPoint
     {
         cv::Point position;
-        float score;
+        float score = 0.0f;
+        int octave = 0;
+        float angle = 0.0f;
     };
 
     const std::array<cv::Point, 16> circle = {
