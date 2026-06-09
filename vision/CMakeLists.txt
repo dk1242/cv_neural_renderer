@@ -11,6 +11,7 @@ target_sources(vision
     src/fast.cpp
     src/image_pyramid.cpp
     src/orb.cpp
+    src/descriptor_matcher.cpp
 )
 
 target_include_directories(vision

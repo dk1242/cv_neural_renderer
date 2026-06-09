@@ -42,11 +42,11 @@ cv::Mat vision::Visualizer::normalizeToDisplay(const cv::Mat &image)
     return normalized;
 }
 
-void vision::Visualizer::display(const cv::Mat &image, const std::string &windowName)
+void vision::Visualizer::display(const cv::Mat &image, const std::string &windowName, int width, int height)
 {
     const cv::Mat displayImage =
         isDisplayReady(image) ? image : normalizeToDisplay(image);
     cv::namedWindow(windowName, cv::WINDOW_NORMAL);
-    cv::resizeWindow(windowName, 640, 720);
+    cv::resizeWindow(windowName, width, height);
     cv::imshow(windowName, displayImage);
 }

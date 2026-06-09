@@ -12,7 +12,7 @@ namespace vision
     public:
         static cv::Mat normalizeToDisplay(
             const cv::Mat &image);
-        void display(const cv::Mat &image, const std::string &windowName);
+        void display(const cv::Mat &image, const std::string &windowName, int width = 640, int height = 720);
     };
 
 }

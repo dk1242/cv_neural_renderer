@@ -17,6 +17,7 @@ find_package(OpenCV REQUIRED)
 
 add_subdirectory(core)
 add_subdirectory(vision)
+add_subdirectory(geometry)
 add_subdirectory(app)
 
 install(TARGETS VisionEngineApp
