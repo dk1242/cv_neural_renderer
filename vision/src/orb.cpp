@@ -6,15 +6,12 @@
 
 vision::OrbExtractor::OrbExtractor()
 {
-    std::mt19937 rng(42);
-    std::uniform_int_distribution<int> dist(-15, 15);
     for (int i = 0; i < 256; ++i)
     {
         vision::OrbExtractor::PointPair pair;
-        pair.p = cv::Point2f(static_cast<float>(dist(rng)),
-                             static_cast<float>(dist(rng)));
-        pair.q = cv::Point2f(static_cast<float>(dist(rng)),
-                             static_cast<float>(dist(rng)));
+        pair.p = cv::Point2f(bit_pattern_31_[4 * i], bit_pattern_31_[4 * i + 1]);
+        pair.q = cv::Point2f(bit_pattern_31_[4 * i + 2], bit_pattern_31_[4 * i + 3]);
+
         m_pattern.push_back(pair);
     }
 }
@@ -22,10 +19,15 @@ vision::OrbExtractor::OrbExtractor()
 float vision::OrbExtractor::computeOrientation(const cv::Mat &image, const vision::KeyPoint &kp) const
 {
     float m00 = 0.0f, m10 = 0.0f, m01 = 0.0f;
-    for (int y = -8; y <= 8; ++y)
+    constexpr int radius = 15;
+
+    for (int y = -radius; y <= radius; ++y)
     {
-        for (int x = -8; x <= 8; ++x)
+        for (int x = -radius; x <= radius; ++x)
         {
+            if (x * x + y * y > radius * radius)
+                continue;
+
             int pixelValue = image.at<uchar>(kp.position.y + y, kp.position.x + x);
             m00 += pixelValue;
             m10 += x * pixelValue;
@@ -51,19 +53,42 @@ cv::Point2f vision::OrbExtractor::rotatePoint(const cv::Point2f &point, float co
 
 uint8_t vision::OrbExtractor::sampleIntensity(const cv::Mat &image, const cv::Point2f &point) const
 {
-    int x = static_cast<int>(std::round(point.x));
-    int y = static_cast<int>(std::round(point.y));
-    if (x < 0 || x >= image.cols || y < 0 || y >= image.rows)
+    int x0 = static_cast<int>(std::floor(point.x));
+    int y0 = static_cast<int>(std::floor(point.y));
+
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+
+    if (x0 < 0 || x1 >= image.cols ||
+        y0 < 0 || y1 >= image.rows)
     {
         return 0;
     }
-    return image.at<uchar>(y, x);
+
+    float dx = point.x - x0;
+    float dy = point.y - y0;
+
+    float I00 = image.at<uchar>(y0, x0);
+    float I10 = image.at<uchar>(y0, x1);
+    float I01 = image.at<uchar>(y1, x0);
+    float I11 = image.at<uchar>(y1, x1);
+
+    float value = (1.0f - dx) * (1.0f - dy) * I00 +
+                  dx * (1.0f - dy) * I10 +
+                  (1.0f - dx) * dy * I01 +
+                  dx * dy * I11;
+    return static_cast<uint8_t>(value);
 }
 
 std::array<uint8_t, 32> vision::OrbExtractor::computeDescriptor(const cv::Mat &image, const KeyPoint &kp) const
 {
     std::array<uint8_t, 32> descriptor = {0};
-    float angleRad = kp.angle;
+    float angleDeg = kp.angle * 180.0f / CV_PI;
+
+    angleDeg = std::round(angleDeg / 12.0f) * 12.0f;
+
+    float angleRad = angleDeg * CV_PI / 180.0f;
+    // float angleRad = kp.angle;
     float cosA = std::cos(angleRad);
     float sinA = std::sin(angleRad);
     for (size_t i = 0; i < m_pattern.size(); ++i)
@@ -84,6 +109,7 @@ std::array<uint8_t, 32> vision::OrbExtractor::computeDescriptor(const cv::Mat &i
             descriptor[i / 8] |= (1 << (i % 8));
         }
     }
+    // std::cout<<"descriptor size "<<sizeof(descriptor)<<std::endl;
     return descriptor;
 }
 
@@ -91,10 +117,10 @@ void vision::OrbExtractor::computeOrientations(const cv::Mat &image, std::vector
 {
     for (auto &kp : keypoints)
     {
-        if (kp.position.x < 8 ||
-            kp.position.x >= image.cols - 8 ||
-            kp.position.y < 8 ||
-            kp.position.y >= image.rows - 8)
+        if (kp.position.x < 15 ||
+            kp.position.x >= image.cols - 15 ||
+            kp.position.y < 15 ||
+            kp.position.y >= image.rows - 15)
         {
             continue;
         }

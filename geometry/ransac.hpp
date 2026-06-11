@@ -17,7 +17,7 @@ namespace geometry
 
         double inlierRatio = 0.0;
 
-        double meanError = 0.0;
+        double meanError = std::numeric_limits<double>::max();
     };
     class RansacHomography
     {
@@ -32,6 +32,8 @@ namespace geometry
                                         float threshold) const;
 
         bool isDegenerate(const std::vector<geometry::Correspondence> &sample);
+        double computeMeanError(const std::vector<geometry::Correspondence> &correspondences,
+                                const std::vector<size_t> &inliers, const cv::Mat &H);
 
     public:
         geometry::RansacResult estimate(const std::vector<geometry::Correspondence> &correspondences);

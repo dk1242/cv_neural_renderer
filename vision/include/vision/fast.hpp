@@ -41,6 +41,9 @@ namespace vision
     public:
         std::vector<KeyPoint> detect(const cv::Mat &image);
 
+        std::vector<KeyPoint> selectKeypointsInGrid(const cv::Mat &image, const std::vector<KeyPoint> &keypoints,
+                                                    int gridRows, int gridCols, int quota);
+
         cv::Mat visualizeCorners(const cv::Mat &image,
                                  const std::vector<KeyPoint> &corners);
     };

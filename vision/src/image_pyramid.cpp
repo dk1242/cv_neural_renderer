@@ -20,25 +20,20 @@ std::vector<vision::Level> vision::ImagePyramid::build(const cv::Mat &image, int
     std::vector<vision::Level> levels;
     levels.reserve(numLevels);
 
-    cv::Mat current = image;
+    GaussianFilter gaussian;
 
     for (int level = 0; level < numLevels; ++level)
     {
         float scale = 1.0f / pow(scaleFactor, level);
+        cv::Mat resized;
 
-        levels.push_back({current.clone(), scale});
+        cv::resize(image, resized, cv::Size(), scale, scale, cv::INTER_LINEAR);
 
-        if (level < numLevels - 1)
-        {
-            cv::Mat next;
-            GaussianFilter gaussian;
-            cv::Mat blurred = gaussian.apply(current);
-            blurred.convertTo(blurred, current.type());
-            next = downsample(blurred);
-            // cv::resize(current, next, cv::Size(), 0.5, 0.5, cv::INTER_LINEAR);
+        cv::Mat blurred = gaussian.apply(resized);
 
-            current = next;
-        }
+        blurred.convertTo(blurred, image.type());
+
+        levels.push_back({blurred, scale});
     }
 
     return levels;

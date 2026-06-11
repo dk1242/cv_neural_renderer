@@ -26,7 +26,7 @@ std::vector<size_t> geometry::RansacHomography::findInliers(const std::vector<ge
     {
         const geometry::Correspondence &corr = correspondences[i];
         float error = estimator.reprojectionError(corr, H);
-        if (error < threshold)
+        if (error < threshold * threshold)
         {
             inliers.push_back(i);
         }
@@ -45,9 +45,26 @@ bool geometry::RansacHomography::isDegenerate(const std::vector<geometry::Corres
     return area < 1e-8; // Check if the area is negligible (degenerate case)
 }
 
+double geometry::RansacHomography::computeMeanError(const std::vector<geometry::Correspondence> &correspondences,
+                                                    const std::vector<size_t> &inliers, const cv::Mat &H)
+{
+    if (inliers.empty())
+    {
+        return std::numeric_limits<double>::max();
+    }
+    geometry::HomographyEstimator estimator;
+    double totalError = 0.0;
+    for (size_t idx : inliers)
+    {
+        totalError += sqrt(estimator.reprojectionError(correspondences[idx], H));
+    }
+    return totalError / inliers.size();
+}
+
 geometry::RansacResult geometry::RansacHomography::estimate(const std::vector<geometry::Correspondence> &correspondences)
 {
     geometry::RansacResult bestResult;
+    geometry::HomographyEstimator estimator;
     for (size_t iter = 0; iter < 1000; ++iter)
     {
         // sample 4 points
@@ -56,20 +73,42 @@ geometry::RansacResult geometry::RansacHomography::estimate(const std::vector<ge
         // reject degenerate
         if (isDegenerate(sample))
         {
-            return bestResult;
+            continue;
         }
         // estimate H
-        cv::Mat H = geometry::HomographyEstimator().estimate(sample);
+        cv::Mat H = estimator.estimate(sample);
         // find inliers
         auto inliers = findInliers(correspondences, H, 3.0f);
-        // if better than best,
+        double meanError = computeMeanError(correspondences, inliers, H);
+
         if (inliers.size() > bestResult.inliers.size())
         {
             bestResult.inliers = inliers;
             bestResult.homography = H;
+            bestResult.meanError = meanError;
+        }
+        else if (inliers.size() == bestResult.inliers.size())
+        {
+            if (meanError < bestResult.meanError)
+            {
+                bestResult.inliers = inliers;
+                bestResult.homography = H;
+                bestResult.meanError = meanError;
+            }
         }
     }
-
-    // update best model
+    std::vector<geometry::Correspondence> inlierCorrespondences;
+    for (size_t idx : bestResult.inliers)
+    {
+        inlierCorrespondences.push_back(correspondences[idx]);
+    }
+    if (inlierCorrespondences.size() >= 4 && !correspondences.empty())
+    {
+        bestResult.homography = estimator.estimate(inlierCorrespondences);
+        bestResult.inliers = findInliers(correspondences, bestResult.homography, 3.0f);
+        bestResult.meanError = computeMeanError(correspondences, bestResult.inliers,
+                                                bestResult.homography);
+        bestResult.inlierRatio = static_cast<float>(bestResult.inliers.size()) / correspondences.size();
+    }
     return bestResult;
 }

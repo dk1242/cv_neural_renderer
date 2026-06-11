@@ -218,9 +218,11 @@ std::vector<vision::KeyPoint> vision::FastCornerDetector::detect(const cv::Mat &
 
     std::vector<vision::KeyPoint> corners;
 
-    for (int y = 3; y < image.rows - 3; ++y)
+    const int border = 16;
+
+    for (int y = border; y < image.rows - border; ++y)
     {
-        for (int x = 3; x < image.cols - 3; ++x)
+        for (int x = border; x < image.cols - border; ++x)
         {
             ++totalPixelsExamined;
 
@@ -240,15 +242,140 @@ std::vector<vision::KeyPoint> vision::FastCornerDetector::detect(const cv::Mat &
         scoreMap.at<int>(corner.position) = static_cast<int>(corner.score);
     }
     std::vector<KeyPoint> nmsCorners = nonMaximumSuppression(scoreMap);
-    // std::cout
-    //     << "Total pixels examined: " << totalPixelsExamined
-    //     << "\nRejected by quick test: " << rejected
-    //     << "\nFull FAST evaluations: " << fullTests
-    //     << "\nDetected corners: " << corners.size()
-    //     << "\nNMS corners: " << nmsCorners.size()
-    //     << std::endl;
 
     return nmsCorners;
+}
+
+std::vector<vision::KeyPoint> vision::FastCornerDetector::selectKeypointsInGrid(const cv::Mat &image,
+                                                                                const std::vector<KeyPoint> &keypoints,
+                                                                                int gridRows, int gridCols, int quota)
+{
+    std::vector<KeyPoint> selectedKeypoints;
+    std::vector<KeyPoint> remainingKeypoints;
+
+    int cellWidth = image.cols / gridCols;
+    int cellHeight = image.rows / gridRows;
+
+    std::vector<std::vector<std::vector<KeyPoint>>> grid(
+        gridRows,
+        std::vector<std::vector<KeyPoint>>(gridCols));
+
+    // Assign keypoints to cells
+    for (const auto &kp : keypoints)
+    {
+        int col = std::min(
+            static_cast<int>(kp.position.x / cellWidth),
+            gridCols - 1);
+
+        int row = std::min(
+            static_cast<int>(kp.position.y / cellHeight),
+            gridRows - 1);
+
+        grid[row][col].push_back(kp);
+    }
+
+    // Sort each cell by score
+    for (auto &row : grid)
+    {
+        for (auto &cell : row)
+        {
+            std::sort(
+                cell.begin(),
+                cell.end(),
+                [](const KeyPoint &a, const KeyPoint &b)
+                {
+                    return a.score > b.score;
+                });
+        }
+    }
+
+    // Count populated cells
+    int populatedCells = 0;
+
+    for (const auto &row : grid)
+    {
+        for (const auto &cell : row)
+        {
+            if (!cell.empty())
+            {
+                ++populatedCells;
+            }
+        }
+    }
+
+    if (populatedCells == 0)
+    {
+        return {};
+    }
+
+    int perCell = std::max(1, quota / populatedCells);
+
+    // First pass:
+    // Take strongest perCell features from each cell
+    for (auto &row : grid)
+    {
+        for (auto &cell : row)
+        {
+            if (cell.empty())
+            {
+                continue;
+            }
+
+            int count =
+                std::min(
+                    perCell,
+                    static_cast<int>(cell.size()));
+
+            selectedKeypoints.insert(
+                selectedKeypoints.end(),
+                cell.begin(),
+                cell.begin() + count);
+
+            // Store leftovers
+            if (count < static_cast<int>(cell.size()))
+            {
+                remainingKeypoints.insert(
+                    remainingKeypoints.end(),
+                    cell.begin() + count,
+                    cell.end());
+            }
+        }
+    }
+
+    // Sort leftovers globally
+    std::sort(
+        remainingKeypoints.begin(),
+        remainingKeypoints.end(),
+        [](const KeyPoint &a, const KeyPoint &b)
+        {
+            return a.score > b.score;
+        });
+
+    // Fill remaining quota
+    int needed =
+        quota -
+        static_cast<int>(selectedKeypoints.size());
+
+    if (needed > 0)
+    {
+        int addCount =
+            std::min(
+                needed,
+                static_cast<int>(remainingKeypoints.size()));
+
+        selectedKeypoints.insert(
+            selectedKeypoints.end(),
+            remainingKeypoints.begin(),
+            remainingKeypoints.begin() + addCount);
+    }
+
+    // Safety clamp
+    if (selectedKeypoints.size() > static_cast<size_t>(quota))
+    {
+        selectedKeypoints.resize(quota);
+    }
+
+    return selectedKeypoints;
 }
 
 cv::Mat vision::FastCornerDetector::visualizeCorners(const cv::Mat &image,
