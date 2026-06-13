@@ -1,5 +1,22 @@
 #include "fundamental_matrix.h"
 
+cv::Mat skewSymmetric(const cv::Mat &t)
+{
+    double tx = t.at<double>(0);
+    double ty = t.at<double>(1);
+    double tz = t.at<double>(2);
+
+    return (cv::Mat_<double>(3, 3) << 0, -tz, ty,
+            tz, 0, -tx,
+            -ty, tx, 0);
+}
+cv::Mat computeEssentialGroundTruth(
+    const cv::Mat &R,
+    const cv::Mat &t)
+{
+    return skewSymmetric(t) * R;
+}
+
 cv::Mat geometry::FundamentalMatrix::estimate8Point(const std::vector<cv::Point2d> &points1, const std::vector<cv::Point2d> &points2)
 {
     Normalization norm;
@@ -7,8 +24,37 @@ cv::Mat geometry::FundamentalMatrix::estimate8Point(const std::vector<cv::Point2
     auto norm2 = norm.normalizePoints(points2);
 
     cv::Mat A = buildAMatrix(norm1.points, norm2.points);
+    // std::cout
+    //     << "\nA Matrix:\n"
+    //     << A
+    //     << '\n';
+    cv::SVD svd(A, cv::SVD::MODIFY_A | cv::SVD::FULL_UV);
 
-    return A;
+    // std::cout << "Singular values:\n";
+    // std::cout << svd.w << '\n';
+
+    cv::Mat f = svd.vt.row(8).t();
+
+    cv::Mat F(3, 3, CV_64F);
+
+    for (int r = 0; r < 3; r++)
+    {
+        for (int c = 0; c < 3; c++)
+        {
+            F.at<double>(r, c) =
+                f.at<double>(3 * r + c);
+        }
+    }
+
+    F = enforceRank2(F);
+
+    F = norm2.T.t() *
+        F *
+        norm1.T;
+
+    F /= cv::norm(F);
+
+    return F;
 }
 
 cv::Mat geometry::FundamentalMatrix::buildAMatrix(const std::vector<cv::Point2d> &points1, const std::vector<cv::Point2d> &points2)
@@ -42,5 +88,28 @@ cv::Mat geometry::FundamentalMatrix::buildAMatrix(const std::vector<cv::Point2d>
 
 cv::Mat geometry::FundamentalMatrix::enforceRank2(const cv::Mat &F)
 {
-    return cv::Mat();
+    cv::SVD svd(F);
+
+    cv::Mat W = cv::Mat::diag(svd.w);
+
+    W.at<double>(2, 2) = 0.0;
+
+    cv::Mat F_rank2 =
+        svd.u *
+        W *
+        svd.vt;
+
+    return F_rank2;
+}
+
+cv::Mat geometry::FundamentalMatrix::computeFundamentalGroundTruth(
+    const cv::Mat &K,
+    const cv::Mat &R,
+    const cv::Mat &t)
+{
+    cv::Mat E = computeEssentialGroundTruth(R, t);
+
+    cv::Mat Kinv = K.inv();
+
+    return Kinv.t() * E * Kinv;
 }

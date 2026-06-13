@@ -13,10 +13,12 @@ namespace geometry
     public:
         static cv::Mat estimate8Point(const std::vector<cv::Point2d> &points1, const std::vector<cv::Point2d> &points2);
 
-    private:
         static cv::Mat buildAMatrix(const std::vector<cv::Point2d> &points1, const std::vector<cv::Point2d> &points2);
 
         static cv::Mat enforceRank2(const cv::Mat &F);
+
+        cv::Mat computeFundamentalGroundTruth(const cv::Mat &K, const cv::Mat &R,
+                                              const cv::Mat &t);
     };
 
 }

@@ -5,6 +5,8 @@ target_sources(geometry
     homography.cpp
     ransac.cpp
     epipolar_geometry.cpp
+    normalization.cpp
+    fundamental_matrix.cpp
 )
 
 target_include_directories(geometry
