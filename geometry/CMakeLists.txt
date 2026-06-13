@@ -4,6 +4,7 @@ target_sources(geometry
     PRIVATE
     homography.cpp
     ransac.cpp
+    epipolar_geometry.cpp
 )
 
 target_include_directories(geometry

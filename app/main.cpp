@@ -12,6 +12,8 @@
 
 #include "geometry/ransac.hpp"
 #include "geometry/homography.hpp"
+#include "geometry/epipolar_geometry.hpp"
+
 
 enum class InputMode
 {
@@ -266,32 +268,272 @@ void processCVORBPair(const cv::Mat &image1, const cv::Mat &image2)
     cv::imshow("CV ORB Matches", visualizeMatches);
 }
 
+cv::Point toImagePoint(const cv::Point2d &p)
+{
+    constexpr double scale = 200.0;
+
+    int x = static_cast<int>(400 + p.x * scale);
+    int y = static_cast<int>(300 - p.y * scale);
+
+    return {x, y};
+}
+
+cv::Point2i toScreen(double x, double z)
+{
+    constexpr double scale = 100.0;
+
+    int sx = 600 + static_cast<int>(x * scale);
+    int sy = 700 - static_cast<int>(z * scale);
+
+    return {sx, sy};
+}
+
+void visualizeEpipolarGeometry()
+{
+    cv::namedWindow("Top View", cv::WINDOW_NORMAL);
+    cv::resizeWindow("Top View", 800, 1200);
+
+    cv::namedWindow("Image 1", cv::WINDOW_NORMAL);
+    cv::resizeWindow("Image 1", 600, 800);
+
+    cv::namedWindow("Image 2", cv::WINDOW_NORMAL);
+    cv::resizeWindow("Image 2", 600, 800);
+
+    cv::Mat canvas(800, 1200, CV_8UC3, cv::Scalar(255, 255, 255));
+    cv::Mat img1(600, 800, CV_8UC3, cv::Scalar(255, 255, 255));
+    cv::Mat img2(600, 800, CV_8UC3, cv::Scalar(255, 255, 255));
+
+    geometry::EpipolarGeometry epipolar;
+
+    geometry::CameraPose cam1;
+    cam1.R = cv::Mat::eye(3, 3, CV_64F);
+    cam1.t = cv::Mat::zeros(3, 1, CV_64F);
+
+    geometry::CameraPose cam2;
+    double angle = 10.0 * CV_PI / 180.0;
+
+    cam2.R = (cv::Mat_<double>(3, 3) << cos(angle), 0, sin(angle),
+              0, 1, 0,
+              -sin(angle), 0, cos(angle));
+    cam2.t = (cv::Mat_<double>(3, 1) << -1.0, 0.0, 0.0);
+
+    cv::Point3d C1 = epipolar.cameraCenter(cam1);
+    cv::Point3d C2 = epipolar.cameraCenter(cam2);
+    std::cout
+        << "C1 = "
+        << C1.x << ", "
+        << C1.y << ", "
+        << C1.z << '\n';
+    std::cout
+        << "C2 = "
+        << C2.x << ", "
+        << C2.y << ", "
+        << C2.z << '\n';
+    double c1x = C1.x;
+    double c1z = C1.z;
+
+    double c2x = C2.x;
+    double c2z = C2.z;
+
+    cv::circle(canvas, toScreen(c1x, c1z), 8, {0, 0, 255}, -1);
+    cv::circle(canvas, toScreen(c2x, c2z), 8, {255, 0, 0}, -1);
+
+    cv::line(canvas, toScreen(c1x, c1z), toScreen(c2x, c2z), {0, 0, 0}, 2);
+
+    std::vector<cv::Point3d> points = {{0.0, 0.0, 4.0}, {1.0, 0.0, 5.0}, {-1.0, 0.0, 6.0}, {2.0, 0.0, 8.0}};
+
+    for (const auto &p : points)
+    {
+        cv::circle(canvas, toScreen(p.x, p.z), 5, {0, 180, 0}, -1);
+        cv::line(canvas, toScreen(c1x, c1z), toScreen(p.x, p.z), {255, 0, 255}, 1);
+        cv::line(canvas, toScreen(c2x, c2z), toScreen(p.x, p.z), {255, 255, 0}, 1);
+    }
+
+    cv::Mat K = (cv::Mat_<double>(3, 3) << 800, 0, 400,
+                 0, 800, 300,
+                 0, 0, 1);
+    // cv::Point3d P(3.0, 1.5, 5.0);
+    std::vector<cv::Point3d> worldPoints =
+        {
+            {-2.0, -0.5, 4.0},
+            {-1.0, 0.2, 5.0},
+            {0.0, -0.3, 6.0},
+            {1.0, 0.4, 7.0},
+            {2.0, -0.1, 8.0}};
+
+    std::vector<cv::Scalar> colors =
+        {
+            {255, 0, 0},
+            {0, 255, 0},
+            {0, 0, 255},
+            {255, 0, 255},
+            {0, 255, 255}};
+
+    for (size_t pointIndex = 0;
+         pointIndex < worldPoints.size();
+         ++pointIndex)
+    {
+        const auto &P = worldPoints[pointIndex];
+        const auto &color = colors[pointIndex];
+
+        auto x1 =
+            epipolar.projectPoint(P, cam1, K);
+
+        auto x2 =
+            epipolar.projectPoint(P, cam2, K);
+
+        if (!x1.visible || !x2.visible)
+        {
+            continue;
+        }
+
+        std::cout
+            << "\n====================\n"
+            << "Point " << pointIndex
+            << " : "
+            << P.x << ", "
+            << P.y << ", "
+            << P.z << '\n';
+
+        cv::circle(
+            img1,
+            cv::Point(
+                static_cast<int>(x1.imagePoint.x),
+                static_cast<int>(x1.imagePoint.y)),
+            5,
+            color,
+            -1);
+
+        cv::circle(
+            img2,
+            cv::Point(
+                static_cast<int>(x2.imagePoint.x),
+                static_cast<int>(x2.imagePoint.y)),
+            5,
+            color,
+            -1);
+
+        cv::Vec3d rayDirection(
+            P.x - C1.x,
+            P.y - C1.y,
+            P.z - C1.z);
+
+        rayDirection /= cv::norm(rayDirection);
+
+        std::vector<cv::Point2d> projectedRayPoints;
+
+        std::vector<double> depths =
+            {
+                2.0,
+                4.0,
+                6.0,
+                8.0,
+                10.0,
+                20.0};
+
+        for (double d : depths)
+        {
+            cv::Point3d X(
+                C1.x + d * rayDirection[0],
+                C1.y + d * rayDirection[1],
+                C1.z + d * rayDirection[2]);
+
+            auto p2 =
+                epipolar.projectPoint(X, cam2, K);
+
+            if (!p2.visible)
+            {
+                continue;
+            }
+
+            projectedRayPoints.push_back(
+                p2.imagePoint);
+
+            std::cout
+                << "depth="
+                << d
+                << " -> "
+                << p2.imagePoint.x
+                << ", "
+                << p2.imagePoint.y
+                << '\n';
+
+            cv::circle(
+                img2,
+                cv::Point(
+                    static_cast<int>(p2.imagePoint.x),
+                    static_cast<int>(p2.imagePoint.y)),
+                3,
+                color,
+                -1);
+        }
+
+        for (size_t i = 1;
+             i < projectedRayPoints.size();
+             ++i)
+        {
+            cv::line(
+                img2,
+                cv::Point(
+                    static_cast<int>(
+                        projectedRayPoints[i - 1].x),
+                    static_cast<int>(
+                        projectedRayPoints[i - 1].y)),
+                cv::Point(
+                    static_cast<int>(
+                        projectedRayPoints[i].x),
+                    static_cast<int>(
+                        projectedRayPoints[i].y)),
+                color,
+                2);
+        }
+    }
+    cv::Mat baseline =
+        (cv::Mat_<double>(3, 1)
+             << C2.x - C1.x,
+         C2.y - C1.y,
+         C2.z - C1.z);
+
+    std::cout << "\nBaseline:\n"
+              << baseline
+              << "\n";
+    std::cout
+        << "\nCamera 2 Rotation:\n"
+        << cam2.R
+        << "\n";
+    cv::Point2d e = epipolar.computeEpipole(cam1, cam2, K);
+    cv::circle(img2, cv::Point(static_cast<int>(e.x), static_cast<int>(e.y)), 8, {255, 0, 0}, -1);
+
+    cv::imshow("Top View", canvas);
+    cv::imshow("Image 1", img1);
+    cv::imshow("Image 2", img2);
+
+    cv::waitKey(0);
+}
+
 int main(int argc, char **argv)
 {
-    InputMode mode =
-        InputMode::Camera;
+    InputMode mode = InputMode::Camera;
 
     if (argc > 1)
     {
         std::string arg = argv[1];
 
+        std::cout << "arg  " << arg;
+
         if (arg == "--images")
         {
-            mode =
-                InputMode::ImagePair;
+            mode = InputMode::ImagePair;
         }
         else if (arg == "--synthetic")
         {
-            mode =
-                InputMode::SyntheticRotation;
+            mode = InputMode::SyntheticRotation;
         }
     }
 
-    if (mode ==
-        InputMode::ImagePair)
+    if (mode == InputMode::ImagePair)
     {
-        auto pair =
-            loadImagePair();
+        auto pair = loadImagePair();
 
         if (pair.image1.empty() ||
             pair.image2.empty())
@@ -306,6 +548,12 @@ int main(int argc, char **argv)
         cv::waitKey(0);
         closeDisplayWindows();
 
+        return 0;
+    }
+    else
+    {
+        std::cout << "Herre....\n";
+        visualizeEpipolarGeometry();
         return 0;
     }
 
