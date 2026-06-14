@@ -5,10 +5,10 @@
 namespace slam
 {
 
-class VisualOdometry
-{
-public:
-    void processFrame(const cv::Mat& frame);
-};
+    class VisualOdometry
+    {
+    public:
+        void processFrame(const cv::Mat &frame);
+    };
 
 }

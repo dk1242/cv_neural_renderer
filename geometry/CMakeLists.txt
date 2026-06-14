@@ -7,6 +7,9 @@ target_sources(geometry
     epipolar_geometry.cpp
     normalization.cpp
     fundamental_matrix.cpp
+    essential_matrix.cpp
+    pose_recovery.cpp
+    triangulation.cpp
 )
 
 target_include_directories(geometry

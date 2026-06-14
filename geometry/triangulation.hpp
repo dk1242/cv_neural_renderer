@@ -5,13 +5,11 @@
 namespace geometry
 {
 
-class Triangulator
-{
-public:
-    cv::Mat triangulate(const cv::Mat& projection1,
-                        const cv::Mat& projection2,
-                        const cv::Mat& points1,
-                        const cv::Mat& points2);
-};
+    class Triangulator
+    {
+    public:
+        cv::Point3d triangulatePoint(const cv::Point2d &x1, const cv::Point2d &x2,
+                                     const cv::Mat &P1, const cv::Mat &P2);
+    };
 
 }

@@ -15,6 +15,9 @@
 #include "geometry/epipolar_geometry.hpp"
 #include "geometry/fundamental_matrix.h"
 #include "geometry/normalization.h"
+#include "geometry/essential_matrix.hpp"
+#include "geometry/pose_recovery.h"
+#include "geometry/triangulation.hpp"
 
 cv::Mat normalizeF(const cv::Mat &F)
 {
@@ -41,6 +44,7 @@ void testFundamentalMatrix()
 
     pose2.t = (cv::Mat_<double>(3, 1) << -1.0, 0.3, 0.2);
 
+    std::vector<cv::Point3d> worldPoints;
     std::vector<cv::Point2d> points1;
     std::vector<cv::Point2d> points2;
 
@@ -52,6 +56,7 @@ void testFundamentalMatrix()
             rng.uniform(-3.0, 3.0),
             rng.uniform(-2.0, 2.0),
             rng.uniform(5.0, 15.0));
+        worldPoints.push_back(point);
 
         points1.push_back(
             epipolar.projectPoint(
@@ -72,46 +77,76 @@ void testFundamentalMatrix()
         points1,
         points2);
 
-    std::cout
-        << "Estimated F:\n"
-        << F
-        << '\n';
-    cv::Mat Festimated = F;
-    cv::Mat Fgt = fundMat.computeFundamentalGroundTruth(K, pose2.R, pose2.t);
+    geometry::EssentialMatrixEstimator estimator;
+    cv::Mat E = estimator.computeEssentialMatrix(F, K);
 
-    cv::Mat FestNorm = normalizeF(Festimated);
-    cv::Mat FgtNorm = normalizeF(Fgt);
-    std::cout
-        << "Festimated F:\n"
-        << Festimated
-        << '\n';
-    std::cout
-        << "Fgt F:\n"
-        << Fgt
-        << '\n';
-    double sameSign =
-        cv::norm(FestNorm - FgtNorm);
+    std::cout << "essMatrix: \n"
+              << E;
+    cv::SVD svd(E);
 
-    double oppositeSign =
-        cv::norm(FestNorm + FgtNorm);
+    std::cout << "\nSingular values:\n"
+              << svd.w << std::endl;
+    cv::Mat E_corrected =
+        estimator.enforceEssentialConstraints(E);
 
-    double error =
-        std::min(sameSign, oppositeSign);
+    geometry::PoseRecovery poseRecovery;
 
-    std::cout
-        << "same sign: "
-        << sameSign
-        << "\nopp Sign "
-        << oppositeSign
-        << "\nF comparison error: "
-        << error
-        << std::endl;
+    std::vector<geometry::CameraPose> poses = poseRecovery.decomposeEssentialMatrix(E_corrected);
 
-    cv::SVD svdEst(Festimated);
-    cv::SVD svdGt(Fgt);
+    geometry::Triangulator triangulator;
 
-    std::cout << svdEst.w << std::endl;
-    std::cout << svdGt.w << std::endl;
+    // P1 = K[I|0]
+    cv::Mat P1;
+    cv::hconcat(
+        cv::Mat::eye(3, 3, CV_64F),
+        cv::Mat::zeros(3, 1, CV_64F),
+        P1);
+
+    P1 = K * P1;
+
+    // Use Pose 2 because it matched GT
+    cv::Mat P2;
+    cv::hconcat(
+        poses[2].R,
+        poses[2].t,
+        P2);
+
+    P2 = K * P2;
+
+    cv::Point3d X = triangulator.triangulatePoint(
+        points1[0],
+        points2[0],
+        P1,
+        P2);
+
+    std::cout << "\n====================\n";
+    std::cout << "Ground Truth Point:\n"
+              << worldPoints[0]
+              << "\n";
+
+    std::cout << "Triangulated Point:\n"
+              << X
+              << "\n";
+
+    std::cout << "Error: "
+              << cv::norm(
+                     cv::Mat(worldPoints[0]),
+                     cv::Mat(X))
+              << "\n";
+
+    auto recoveredPose = poseRecovery.recoverPose(E, points1, points2, K);
+    std::cout << "GT R:\n"
+              << pose2.R << std::endl;
+    std::cout << "Recovered R:\n"
+              << recoveredPose.R << std::endl;
+
+    std::cout << "GT t direction:\n"
+              << pose2.t / cv::norm(pose2.t)
+              << std::endl;
+
+    std::cout << "Recovered t:\n"
+              << recoveredPose.t
+              << std::endl;
 }
 
 int main(int argc, char **argv)
