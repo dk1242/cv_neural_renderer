@@ -7,7 +7,7 @@ cv::Point3d geometry::Triangulator::triangulatePoint(const cv::Point2d &x1, cons
     A.row(0) = x1.x * P1.row(2) - P1.row(0);
     A.row(1) = x1.y * P1.row(2) - P1.row(1);
     A.row(2) = x2.x * P2.row(2) - P2.row(0);
-    A.row(3) = x2.y * P2.row(2) - P2.row(0);
+    A.row(3) = x2.y * P2.row(2) - P2.row(1);
 
     cv::SVD svd(A);
 

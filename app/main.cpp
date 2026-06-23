@@ -1,6 +1,8 @@
 #include <iostream>
+#include <iomanip>
 #include <chrono>
 #include <filesystem>
+#include <limits>
 
 #include <opencv2/opencv.hpp>
 
@@ -19,138 +21,266 @@
 #include "geometry/pose_recovery.h"
 #include "geometry/triangulation.hpp"
 
-cv::Mat normalizeF(const cv::Mat &F)
+#include "slam/visual_odometry.hpp"
+
+static std::vector<std::filesystem::path> loadImagePaths(const std::filesystem::path &folder)
 {
-    return F / cv::norm(F);
+    std::vector<std::filesystem::path> imagePaths;
+    if (!std::filesystem::is_directory(folder))
+    {
+        return imagePaths;
+    }
+
+    for (const auto &entry : std::filesystem::directory_iterator(folder))
+    {
+        if (!entry.is_regular_file())
+        {
+            continue;
+        }
+
+        std::string extension = entry.path().extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+
+        if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" || extension == ".bmp" || extension == ".tiff" || extension == ".tif")
+        {
+            imagePaths.push_back(entry.path());
+        }
+    }
+
+    std::sort(imagePaths.begin(), imagePaths.end());
+    return imagePaths;
 }
 
-void testFundamentalMatrix()
+void testVisualOdometry()
 {
-    geometry::EpipolarGeometry epipolar;
-    cv::Mat K =
-        (cv::Mat_<double>(3, 3) << 800, 0, 320,
-         0, 800, 240,
-         0, 0, 1);
-
-    geometry::CameraPose pose1;
-    pose1.R = cv::Mat::eye(3, 3, CV_64F);
-    pose1.t = cv::Mat::zeros(3, 1, CV_64F);
-
-    double angle = 15.0 * CV_PI / 180.0;
-    geometry::CameraPose pose2;
-    pose2.R = (cv::Mat_<double>(3, 3) << cos(angle), 0, sin(angle),
-               0, 1, 0,
-               -sin(angle), 0, cos(angle));
-
-    pose2.t = (cv::Mat_<double>(3, 1) << -1.0, 0.3, 0.2);
-
-    std::vector<cv::Point3d> worldPoints;
-    std::vector<cv::Point2d> points1;
-    std::vector<cv::Point2d> points2;
-
-    cv::RNG rng(42);
-
-    for (int i = 0; i < 100; i++)
+    const std::filesystem::path sourceFolder = "/home/dk1242/Desktop/opencv/basics/VisionEngine/datasets/drive/image_00/data";
+    auto imageFiles = loadImagePaths(sourceFolder);
+    if (imageFiles.empty())
     {
-        cv::Point3d point(
-            rng.uniform(-3.0, 3.0),
-            rng.uniform(-2.0, 2.0),
-            rng.uniform(5.0, 15.0));
-        worldPoints.push_back(point);
-
-        points1.push_back(
-            epipolar.projectPoint(
-                        point,
-                        pose1,
-                        K)
-                .imagePoint);
-
-        points2.push_back(
-            epipolar.projectPoint(
-                        point,
-                        pose2,
-                        K)
-                .imagePoint);
+        std::cerr << "No image files found in '" << sourceFolder << "'" << std::endl;
+        return;
     }
-    geometry::FundamentalMatrix fundMat;
-    cv::Mat F = fundMat.estimate8Point(
-        points1,
-        points2);
 
-    geometry::EssentialMatrixEstimator estimator;
-    cv::Mat E = estimator.computeEssentialMatrix(F, K);
-
-    std::cout << "essMatrix: \n"
-              << E;
-    cv::SVD svd(E);
-
-    std::cout << "\nSingular values:\n"
-              << svd.w << std::endl;
-    cv::Mat E_corrected =
-        estimator.enforceEssentialConstraints(E);
-
+    vision::FastCornerDetector fastDetector;
+    vision::OrbExtractor orbExtractor;
+    vision::DescriptorMatcher matcher;
+    geometry::EssentialMatrixEstimator essentialEstimator;
     geometry::PoseRecovery poseRecovery;
+    geometry::RansacFundamental fundamentalRansac;
 
-    std::vector<geometry::CameraPose> poses = poseRecovery.decomposeEssentialMatrix(E_corrected);
+    std::cout << "Loaded " << imageFiles.size() << " images from " << sourceFolder << std::endl;
 
-    geometry::Triangulator triangulator;
+    std::vector<cv::Point2d> previousPoints;
+    std::vector<vision::OrbDescriptor> previousDescriptors;
+    bool hasPreviousFrame = false;
+    cv::Mat cameraMatrix;
+    bool cameraInitialized = false;
+    geometry::CameraPose recoveredPose;
 
-    // P1 = K[I|0]
-    cv::Mat P1;
-    cv::hconcat(
-        cv::Mat::eye(3, 3, CV_64F),
-        cv::Mat::zeros(3, 1, CV_64F),
-        P1);
+    auto setPreviousFrame = [&](const std::vector<vision::KeyPoint> &keypoints,
+                                const std::vector<vision::OrbDescriptor> &descriptors) {
+        previousDescriptors = descriptors;
+        previousPoints.clear();
+        previousPoints.reserve(keypoints.size());
+        for (const auto &keypoint : keypoints)
+        {
+            previousPoints.emplace_back(keypoint.position.x, keypoint.position.y);
+        }
+        hasPreviousFrame = true;
+    };
 
-    P1 = K * P1;
+    auto buildCameraMatrix = [](int width, int height) -> cv::Mat {
+        const double focalLength = 800.0;
+        const double cx = width * 0.5;
+        const double cy = height * 0.5;
+        cv::Mat K = (cv::Mat_<double>(3, 3) << focalLength, 0.0, cx,
+                     0.0, focalLength, cy,
+                     0.0, 0.0, 1.0);
+        return K;
+    };
 
-    // Use Pose 2 because it matched GT
-    cv::Mat P2;
-    cv::hconcat(
-        poses[2].R,
-        poses[2].t,
-        P2);
+    const size_t maxFrames = 20;
+    const size_t frameCount = std::min(imageFiles.size(), maxFrames);
 
-    P2 = K * P2;
+    for (size_t i = 0; i < frameCount; ++i)
+    {
+        const auto start = std::chrono::high_resolution_clock::now();
+        const auto &imagePath = imageFiles[i];
+        cv::Mat frame = cv::imread(imagePath.string(), cv::IMREAD_COLOR);
+        if (frame.empty())
+        {
+            std::cerr << "Failed to load image: " << imagePath << std::endl;
+            continue;
+        }
 
-    cv::Point3d X = triangulator.triangulatePoint(
-        points1[0],
-        points2[0],
-        P1,
-        P2);
+        cv::Mat gray;
+        if (frame.channels() == 3)
+        {
+            cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+        }
+        else if (frame.channels() == 4)
+        {
+            cv::cvtColor(frame, gray, cv::COLOR_BGRA2GRAY);
+        }
+        else
+        {
+            gray = frame.clone();
+        }
 
-    std::cout << "\n====================\n";
-    std::cout << "Ground Truth Point:\n"
-              << worldPoints[0]
-              << "\n";
+        if (!cameraInitialized)
+        {
+            cameraMatrix = buildCameraMatrix(gray.cols, gray.rows);
+            cameraInitialized = !cameraMatrix.empty();
+        }
 
-    std::cout << "Triangulated Point:\n"
-              << X
-              << "\n";
+        std::vector<vision::KeyPoint> keypoints = fastDetector.detect(gray);
+        keypoints = fastDetector.selectKeypointsInGrid(gray, keypoints, 8, 8, 300);
+        orbExtractor.computeOrientations(gray, keypoints);
+        std::vector<vision::OrbDescriptor> descriptors = orbExtractor.computeDescriptors(gray, keypoints);
 
-    std::cout << "Error: "
-              << cv::norm(
-                     cv::Mat(worldPoints[0]),
-                     cv::Mat(X))
-              << "\n";
+        if (!hasPreviousFrame)
+        {
+            setPreviousFrame(keypoints, descriptors);
+            std::cout << "Loaded first frame with " << keypoints.size() << " keypoints" << std::endl;
+            continue;
+        }
 
-    auto recoveredPose = poseRecovery.recoverPose(E, points1, points2, K);
-    std::cout << "GT R:\n"
-              << pose2.R << std::endl;
-    std::cout << "Recovered R:\n"
-              << recoveredPose.R << std::endl;
+        auto knnForward = matcher.knnMatch(previousDescriptors, descriptors, 2);
+        auto ratioMatches = matcher.ratioTest(knnForward, 0.75f);
+        auto knnBackward = matcher.knnMatch(descriptors, previousDescriptors, 2);
+        auto ratioBackwardMatches = matcher.ratioTest(knnBackward, 0.75f);
+        auto crossMatches = matcher.crosscheckMatch(ratioMatches, ratioBackwardMatches);
 
-    std::cout << "GT t direction:\n"
-              << pose2.t / cv::norm(pose2.t)
-              << std::endl;
+        std::vector<cv::Point2d> points1;
+        std::vector<cv::Point2d> points2;
+        points1.reserve(crossMatches.size());
+        points2.reserve(crossMatches.size());
 
-    std::cout << "Recovered t:\n"
-              << recoveredPose.t
-              << std::endl;
+        for (const auto &match : crossMatches)
+        {
+            points1.push_back(previousPoints[match.queryIdx]);
+            points2.emplace_back(keypoints[match.trainIdx].position.x, keypoints[match.trainIdx].position.y);
+        }
+
+        if (crossMatches.size() < 30)
+        {
+            const auto end = std::chrono::high_resolution_clock::now();
+            const double elapsedMs =
+                std::chrono::duration<double, std::milli>(end - start).count();
+
+            std::cout << "Frame " << i << " -> " << (i + 1)
+                      << " | Matches: " << crossMatches.size()
+                      << " | Skipped: insufficient matches"
+                      << " | Time: " << std::fixed << std::setprecision(1)
+                      << elapsedMs << " ms" << std::endl;
+            setPreviousFrame(keypoints, descriptors);
+            continue;
+        }
+
+        const auto ransacResult = fundamentalRansac.estimateFundamental(points1, points2);
+        const cv::Mat &F = ransacResult.model;
+        const cv::Mat &inlierMask = ransacResult.inlierMask;
+        const size_t ransacInliers = ransacResult.inlierCount;
+
+        std::vector<cv::Point2d> inlierPoints1;
+        std::vector<cv::Point2d> inlierPoints2;
+        inlierPoints1.reserve(ransacInliers);
+        inlierPoints2.reserve(ransacInliers);
+        for (int k = 0; k < inlierMask.rows; ++k)
+        {
+            if (inlierMask.at<uchar>(k))
+            {
+                inlierPoints1.push_back(points1[static_cast<size_t>(k)]);
+                inlierPoints2.push_back(points2[static_cast<size_t>(k)]);
+            }
+        }
+
+        bool validPose = ransacInliers >= 20;
+        int positiveDepthCount = 0;
+        double rotationAngleDeg = 0.0;
+        double translationNorm = 0.0;
+        cv::Vec3d translationDirection(0.0, 0.0, 0.0);
+        std::string poseFailureReason;
+        cv::Mat E;
+        if (F.empty() || F.rows != 3 || F.cols != 3)
+        {
+            validPose = false;
+            poseFailureReason = "invalid fundamental matrix";
+        }
+        else if (ransacInliers < 20)
+        {
+            validPose = false;
+            poseFailureReason = "insufficient inliers";
+        }
+        else
+        {
+            if (cameraInitialized)
+            {
+                E = essentialEstimator.computeEssentialMatrix(F, cameraMatrix);
+                E = essentialEstimator.enforceEssentialConstraints(E);
+                if (E.empty())
+                {
+                    validPose = false;
+                    poseFailureReason = "invalid essential matrix";
+                }
+                else
+                {
+                    recoveredPose = poseRecovery.recoverPose(
+                        E, inlierPoints1, inlierPoints2, cameraMatrix);
+                    positiveDepthCount = poseRecovery.countPositiveDepth(
+                        recoveredPose, inlierPoints1, inlierPoints2, cameraMatrix);
+
+                    cv::Mat rvec;
+                    cv::Rodrigues(recoveredPose.R, rvec);
+                    double rotationAngle = cv::norm(rvec);
+                    rotationAngleDeg = rotationAngle * 180.0 / CV_PI;
+                    translationNorm = cv::norm(recoveredPose.t);
+                    const cv::Vec3d rawTranslation(
+                        recoveredPose.t.at<double>(0),
+                        recoveredPose.t.at<double>(1),
+                        recoveredPose.t.at<double>(2));
+                    if (translationNorm > std::numeric_limits<double>::epsilon())
+                    {
+                        translationDirection = rawTranslation / translationNorm;
+                    }
+                }
+            }
+            else
+            {
+                validPose = false;
+                poseFailureReason = "invalid camera matrix";
+            }
+        }
+
+        const auto end = std::chrono::high_resolution_clock::now();
+        const double elapsedMs =
+            std::chrono::duration<double, std::milli>(end - start).count();
+
+        std::cout << std::fixed << std::setprecision(2)
+                  << "Frame " << i << " -> " << (i + 1)
+                  << " | Matches: " << crossMatches.size()
+                  << " | Inliers: " << ransacInliers
+                  << " | Positive Depth: " << positiveDepthCount
+                  << " | Rot: " << std::setprecision(2) << rotationAngleDeg << " deg"
+                  << " | t: ["
+                  << translationDirection[0] << ", "
+                  << translationDirection[1] << ", "
+                  << translationDirection[2] << "]"
+                  << " | Time: " << std::setprecision(1) << elapsedMs << " ms";
+        if (!validPose)
+        {
+            std::cout << " | Pose: invalid (" << poseFailureReason << ")";
+        }
+        std::cout << std::endl;
+
+        setPreviousFrame(keypoints, descriptors);
+    }
 }
 
 int main(int argc, char **argv)
 {
-    testFundamentalMatrix();
+    testVisualOdometry();
     return 0;
 }

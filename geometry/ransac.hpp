@@ -1,24 +1,24 @@
 #pragma once
 
 #include <opencv2/opencv.hpp>
+#include <limits>
 #include "correspondence.hpp"
 #include "homography.hpp"
+#include "fundamental_matrix.h"
 #include <random>
 
 namespace geometry
 {
     struct RansacResult
     {
-        cv::Mat homography;
-
-        std::vector<size_t> inliers;
-
+        cv::Mat model;
+        cv::Mat inlierMask;
         size_t iterations = 0;
-
+        size_t inlierCount = 0;
         double inlierRatio = 0.0;
-
         double meanError = std::numeric_limits<double>::max();
     };
+
     class RansacHomography
     {
     private:
@@ -37,6 +37,19 @@ namespace geometry
 
     public:
         geometry::RansacResult estimate(const std::vector<geometry::Correspondence> &correspondences);
+    };
+
+    class RansacFundamental
+    {
+    private:
+        std::mt19937 m_rng{std::random_device{}()};
+
+    public:
+        RansacResult estimateFundamental(
+            const std::vector<cv::Point2d> &points1,
+            const std::vector<cv::Point2d> &points2,
+            double threshold = 3.0,
+            size_t maxIterations = 2000);
     };
 
 }

@@ -100,18 +100,13 @@ geometry::CameraPose geometry::PoseRecovery::recoverPose(const cv::Mat &E, const
     for (size_t i = 0; i < candidates.size(); i++)
     {
         int count = countPositiveDepth(candidates[i], points1, points2, K);
-        std::cout
-            << "Candidate "
-            << i
-            << " : "
-            << count
-            << std::endl;
+
         if (count > bestCount)
         {
             bestCount = count;
             bestPose = candidates[i];
         }
     }
-    // std::cout << "bestCount " << bestCount;
+
     return bestPose;
 }

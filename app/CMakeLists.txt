@@ -13,4 +13,5 @@ target_link_libraries(
     PRIVATE
     vision
     geometry
+    slam
 )

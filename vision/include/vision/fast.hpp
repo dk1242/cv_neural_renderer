@@ -7,7 +7,7 @@ namespace vision
 {
     struct KeyPoint
     {
-        cv::Point position;
+        cv::Point2f position;
         float score = 0.0f;
         int octave = 0;
         float angle = 0.0f;
