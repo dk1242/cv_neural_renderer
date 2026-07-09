@@ -11,6 +11,7 @@
 #include "geometry/pose_recovery.h"
 #include "geometry/ransac.hpp"
 #include "geometry/triangulation.hpp"
+#include "slam/track_manager.hpp"
 
 namespace slam
 {
@@ -46,6 +47,7 @@ namespace slam
         const std::vector<MapPoint>& mapPoints() const;
         const std::vector<cv::Point3d>& cameraCenters() const;
         const CameraPose& currentPose() const;
+        const TrackManager& trackManager() const;
 
     private:
         Frame previousFrame_;
@@ -66,9 +68,14 @@ namespace slam
         geometry::EssentialMatrixEstimator essentialEstimator_;
         geometry::PoseRecovery poseRecovery_;
         geometry::Triangulator triangulator_;
+        TrackManager trackManager_;
 
         Frame createFrame(const cv::Mat &image);
         void setPreviousFrame(Frame frame);
         void triangulateCurrentFrame(const geometry::CameraPose &relativePose, std::vector<cv::Point2d> &inlierPoints1, std::vector<cv::Point2d> &inlierPoints2);
+        Observation makeObservation(FrameId frameId, size_t keypointIndex, const Frame &frame) const;
+        void logFrameStats(size_t matchCount, std::optional<size_t> inlierCount,
+                            const TrackManager::UpdateStats &trackStats,
+                            const std::string &statusLine, double elapsedMs) const;
     };
 }

@@ -9,9 +9,8 @@ struct GLFWwindow;
 
 #include "camera.hpp"
 #include "fly_camera.hpp"
+#include "geometry_object.hpp"
 #include "shader.hpp"
-#include "vao.hpp"
-#include "vbo.hpp"
 
 namespace renderer
 {
@@ -39,19 +38,15 @@ private:
     bool initialized_ = false;
 
     std::unique_ptr<Shader> shader_;
-    std::unique_ptr<VAO> pointsVAO_;
-    std::unique_ptr<VBO> pointsVBO_;
-    std::unique_ptr<VAO> gridVAO_;
-    std::unique_ptr<VBO> gridVBO_;
-    int gridVertexCount_ = 0;
+    std::unique_ptr<GeometryObject> pointsGeometry_;
+    std::unique_ptr<GeometryObject> gridGeometry_;
+    std::unique_ptr<GeometryObject> axesGeometry_;
     float gridHalfExtent_ = 20.0f;
-    std::unique_ptr<VAO> axesVAO_;
-    std::unique_ptr<VBO> axesVBO_;
     std::unique_ptr<FlyCamera> flyCamera_;
 
-    void drawMapPoints() const;
-    void drawGrid() const;
-    void drawAxes() const;
+    bool createWindow(int width, int height, const std::string& title);
+    bool loadOpenGL();
+    bool setupShaderAndBuffers();
     void rebuildGrid(float halfExtent);
     void frameCameraOnMapPoints();
     static void errorCallback(int error, const char* description);

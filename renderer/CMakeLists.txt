@@ -10,6 +10,7 @@ endif()
 add_library(renderer STATIC
     camera.cpp
     fly_camera.cpp
+    geometry_object.cpp
     opengl_renderer.cpp
     shader.cpp
     vao.cpp

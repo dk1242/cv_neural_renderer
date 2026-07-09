@@ -50,6 +50,54 @@ void slam::VisualOdometry::setPreviousFrame(Frame frame)
     previousFrame_ = std::move(frame);
 }
 
+slam::Observation slam::VisualOdometry::makeObservation(FrameId frameId, size_t keypointIndex,
+                                                          const Frame &frame) const
+{
+    return Observation{
+        frameId,
+        keypointIndex,
+        frame.keypoints[keypointIndex].position,
+        frame.descriptors[keypointIndex]};
+}
+
+void slam::VisualOdometry::logFrameStats(size_t matchCount, std::optional<size_t> inlierCount,
+                                          const TrackManager::UpdateStats &trackStats,
+                                          const std::string &statusLine, double elapsedMs) const
+{
+    const auto lengthStats = trackManager_.activeTrackLengthStats();
+
+    std::cout << "Frame " << frameIndex_ << " -> " << (frameIndex_ + 1) << "\n"
+              << "----------------------------------------\n"
+              << "Matches           : " << matchCount << "\n"
+              << "RANSAC Inliers    : ";
+    if (inlierCount)
+    {
+        std::cout << *inlierCount;
+    }
+    else
+    {
+        std::cout << "-";
+    }
+    std::cout << "\n\n"
+              << "Tracks\n"
+              << "  New             : " << trackStats.newTracks << "\n"
+              << "  Extended        : " << trackStats.extendedTracks << "\n"
+              << "  Terminated      : " << trackStats.terminatedTracks << "\n\n"
+              << "Active            : " << trackManager_.activeTrackCount() << "\n"
+              << "Total             : " << trackManager_.totalTrackCount() << "\n\n"
+              << "Track Lengths\n"
+              << "  Average         : " << std::fixed << std::setprecision(1) << lengthStats.average << "\n"
+              << "  Longest         : " << lengthStats.longest << "\n\n";
+
+    if (!statusLine.empty())
+    {
+        std::cout << statusLine << "\n";
+    }
+
+    std::cout << "Time              : " << std::fixed << std::setprecision(1)
+              << elapsedMs << " ms" << std::endl;
+}
+
 void slam::VisualOdometry::triangulateCurrentFrame(const geometry::CameraPose &relativePose,
                                                    std::vector<cv::Point2d> &inlierPoints1, std::vector<cv::Point2d> &inlierPoints2)
 {
@@ -142,15 +190,14 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
 
     if (crossMatches.size() < 30)
     {
+        const auto trackStats = trackManager_.update({});
+
         const auto end = std::chrono::high_resolution_clock::now();
         const double elapsedMs =
             std::chrono::duration<double, std::milli>(end - start).count();
 
-        std::cout << "Frame " << frameIndex_ << " -> " << (frameIndex_ + 1)
-                  << " | Matches: " << crossMatches.size()
-                  << " | Skipped: insufficient matches"
-                  << " | Time: " << std::fixed << std::setprecision(1)
-                  << elapsedMs << " ms" << std::endl;
+        logFrameStats(crossMatches.size(), std::nullopt, trackStats,
+                      "Skipped: insufficient matches", elapsedMs);
 
         setPreviousFrame(std::move(currentFrame));
         lastRelativePose_.reset();
@@ -176,16 +223,25 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
 
     std::vector<cv::Point2d> inlierPoints1;
     std::vector<cv::Point2d> inlierPoints2;
+    std::vector<slam::Correspondence> correspondences;
     inlierPoints1.reserve(ransacResult.inlierCount);
     inlierPoints2.reserve(ransacResult.inlierCount);
+    correspondences.reserve(ransacResult.inlierCount);
     for (int i = 0; i < ransacResult.inlierMask.rows; ++i)
     {
         if (ransacResult.inlierMask.at<uchar>(i))
         {
             inlierPoints1.push_back(points1[static_cast<size_t>(i)]);
             inlierPoints2.push_back(points2[static_cast<size_t>(i)]);
+
+            const auto &match = crossMatches[static_cast<size_t>(i)];
+            correspondences.push_back(Correspondence{
+                makeObservation(frameIndex_ - 1, static_cast<size_t>(match.queryIdx), previousFrame_),
+                makeObservation(frameIndex_, static_cast<size_t>(match.trainIdx), currentFrame)});
         }
     }
+
+    const auto trackStats = trackManager_.update(correspondences);
 
     bool validPose = true;
     int positiveDepthCount = 0;
@@ -277,10 +333,9 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
     const double elapsedMs =
         std::chrono::duration<double, std::milli>(end - start).count();
 
-    if (!validPose)
-    {
-        std::cout << " | Pose: invalid (" << failureReason << ")";
-    }
+    logFrameStats(crossMatches.size(), correspondences.size(), trackStats,
+                  validPose ? std::string() : ("Pose: invalid (" + failureReason + ")"),
+                  elapsedMs);
     setPreviousFrame(std::move(currentFrame));
     ++frameIndex_;
 }
@@ -314,6 +369,11 @@ const std::vector<cv::Point3d>& slam::VisualOdometry::cameraCenters() const
 const slam::CameraPose& slam::VisualOdometry::currentPose() const
 {
     return currentPose_;
+}
+
+const slam::TrackManager& slam::VisualOdometry::trackManager() const
+{
+    return trackManager_;
 }
 
 cv::Mat slam::VisualOdometry::drawTrajectory() const

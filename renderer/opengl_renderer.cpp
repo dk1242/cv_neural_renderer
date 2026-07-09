@@ -74,6 +74,41 @@ namespace renderer
 
     bool OpenGLRenderer::initialize(int width, int height, const std::string &title)
     {
+        if (!createWindow(width, height, title))
+        {
+            return false;
+        }
+
+        // GLFW_MAXIMIZED means the requested width/height above are not what we
+        // actually got — use the real framebuffer size for the viewport/aspect
+        // ratio instead, or the scene renders into a small corner of a maximized
+        // window while the camera projection still assumes the original size.
+        glfwGetFramebufferSize(window_, &width, &height);
+
+        if (!loadOpenGL() || !setupShaderAndBuffers())
+        {
+            glfwDestroyWindow(window_);
+            glfwTerminate();
+            window_ = nullptr;
+            return false;
+        }
+
+        flyCamera_ = std::make_unique<FlyCamera>(width, height, glm::vec3(0.0f, 0.0f, 10.0f));
+
+        glViewport(0, 0, width, height);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_PROGRAM_POINT_SIZE);
+        glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
+
+        width_ = width;
+        height_ = height;
+        initialized_ = true;
+
+        return true;
+    }
+
+    bool OpenGLRenderer::createWindow(int width, int height, const std::string &title)
+    {
         glfwSetErrorCallback(errorCallback);
         if (glfwInit() == GLFW_FALSE)
         {
@@ -95,67 +130,45 @@ namespace renderer
         }
 
         glfwMakeContextCurrent(window_);
+        return true;
+    }
 
-        // GLFW_MAXIMIZED means the requested width/height above are not what we
-        // actually got — use the real framebuffer size for the viewport/aspect
-        // ratio instead, or the scene renders into a small corner of a maximized
-        // window while the camera projection still assumes the original size.
-        glfwGetFramebufferSize(window_, &width, &height);
-
+    bool OpenGLRenderer::loadOpenGL()
+    {
         if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)))
         {
             std::cerr << "OpenGLRenderer: failed to initialize GLAD" << std::endl;
-            glfwDestroyWindow(window_);
-            glfwTerminate();
             return false;
         }
 
         std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
+        return true;
+    }
 
+    bool OpenGLRenderer::setupShaderAndBuffers()
+    {
         shader_ = std::make_unique<Shader>(RENDERER_SHADER_DIR "/points.vert",
                                            RENDERER_SHADER_DIR "/points.frag",
                                            "points");
         if (shader_->ID == 0)
         {
             std::cerr << "OpenGLRenderer: failed to create shader program" << std::endl;
-            glfwDestroyWindow(window_);
-            glfwTerminate();
             return false;
         }
 
-        pointsVBO_ = std::make_unique<VBO>();
-        pointsVAO_ = std::make_unique<VAO>();
-        pointsVAO_->linkAttrib(*pointsVBO_, 0, 3);
+        pointsGeometry_ = std::make_unique<GeometryObject>(GL_POINTS);
 
-        gridVBO_ = std::make_unique<VBO>();
-        gridVAO_ = std::make_unique<VAO>();
-        gridVAO_->linkAttrib(*gridVBO_, 0, 3);
+        gridGeometry_ = std::make_unique<GeometryObject>(GL_LINES);
         rebuildGrid(gridHalfExtent_);
 
-        {
-            constexpr float axisLength = 2.0f;
-            const float axesVertices[] = {
-                0.0f, 0.0f, 0.0f, axisLength, 0.0f, 0.0f, // X
-                0.0f, 0.0f, 0.0f, 0.0f, axisLength, 0.0f, // Y
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, axisLength  // Z
-            };
-
-            axesVBO_ = std::make_unique<VBO>();
-            axesVBO_->setData(axesVertices, sizeof(axesVertices));
-            axesVAO_ = std::make_unique<VAO>();
-            axesVAO_->linkAttrib(*axesVBO_, 0, 3);
-        }
-
-        flyCamera_ = std::make_unique<FlyCamera>(width, height, glm::vec3(0.0f, 0.0f, 10.0f));
-
-        glViewport(0, 0, width, height);
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_PROGRAM_POINT_SIZE);
-        glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
-
-        width_ = width;
-        height_ = height;
-        initialized_ = true;
+        axesGeometry_ = std::make_unique<GeometryObject>(GL_LINES);
+        constexpr float axisLength = 2.0f;
+        const float axesVertices[] = {
+            0.0f, 0.0f, 0.0f, axisLength, 0.0f, 0.0f, // X
+            0.0f, 0.0f, 0.0f, 0.0f, axisLength, 0.0f, // Y
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f, axisLength  // Z
+        };
+        axesGeometry_->setData(axesVertices, sizeof(axesVertices));
 
         return true;
     }
@@ -224,7 +237,7 @@ namespace renderer
             pointData.push_back(static_cast<float>(point.z));
         }
 
-        pointsVBO_->setData(pointData.data(), pointData.size() * sizeof(float));
+        pointsGeometry_->setData(pointData.data(), pointData.size() * sizeof(float));
 
         frameCameraOnMapPoints();
     }
@@ -243,11 +256,12 @@ namespace renderer
         shader_->Activate();
         glUniformMatrix4fv(glGetUniformLocation(shader_->ID, "uProjection"), 1, GL_FALSE, glm::value_ptr(flyCamera_->projection));
         glUniformMatrix4fv(glGetUniformLocation(shader_->ID, "uView"), 1, GL_FALSE, glm::value_ptr(flyCamera_->view));
-        drawGrid();
-        drawAxes();
 
-        glUniform3f(glGetUniformLocation(shader_->ID, "uColor"), 1.0f, 1.0f, 0.6f);
-        drawMapPoints();
+        gridGeometry_->draw(shader_->ID, glm::vec3(0.35f, 0.35f, 0.4f));
+        axesGeometry_->draw(shader_->ID, glm::vec3(1.0f, 0.0f, 0.0f), 0, 2); // X - red
+        axesGeometry_->draw(shader_->ID, glm::vec3(0.0f, 1.0f, 0.0f), 2, 2); // Y - green
+        axesGeometry_->draw(shader_->ID, glm::vec3(0.0f, 0.4f, 1.0f), 4, 2); // Z - blue
+        pointsGeometry_->draw(shader_->ID, glm::vec3(1.0f, 1.0f, 0.6f));
 
         glUseProgram(0);
         glfwSwapBuffers(window_);
@@ -273,12 +287,9 @@ namespace renderer
     void OpenGLRenderer::cleanup()
     {
         flyCamera_.reset();
-        pointsVAO_.reset();
-        pointsVBO_.reset();
-        gridVAO_.reset();
-        gridVBO_.reset();
-        axesVAO_.reset();
-        axesVBO_.reset();
+        pointsGeometry_.reset();
+        gridGeometry_.reset();
+        axesGeometry_.reset();
 
         if (shader_)
         {
@@ -299,18 +310,6 @@ namespace renderer
         }
     }
 
-    void OpenGLRenderer::drawMapPoints() const
-    {
-        if (mapPoints_.empty())
-        {
-            return;
-        }
-
-        pointsVAO_->bind();
-        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(mapPoints_.size()));
-        pointsVAO_->unbind();
-    }
-
     void OpenGLRenderer::rebuildGrid(float halfExtent)
     {
         gridHalfExtent_ = halfExtent;
@@ -325,8 +324,7 @@ namespace renderer
             gridVertices.insert(gridVertices.end(), {coord, 0.0f, -halfExtent, coord, 0.0f, halfExtent});
         }
 
-        gridVertexCount_ = static_cast<int>(gridVertices.size() / 3);
-        gridVBO_->setData(gridVertices.data(), gridVertices.size() * sizeof(float));
+        gridGeometry_->setData(gridVertices.data(), gridVertices.size() * sizeof(float));
     }
 
     void OpenGLRenderer::frameCameraOnMapPoints()
@@ -404,40 +402,6 @@ namespace renderer
         flyCamera_->cameraOrientation = lookDir;
         const glm::vec3 flatLookDir(lookDir.x, 0.0f, lookDir.z);
         flyCamera_->playerOrientation = glm::length(flatLookDir) > 1e-4f ? glm::normalize(flatLookDir) : glm::vec3(0.0f, 0.0f, -1.0f);
-    }
-
-    void OpenGLRenderer::drawGrid() const
-    {
-        if (!gridVAO_)
-        {
-            return;
-        }
-
-        glUniform3f(glGetUniformLocation(shader_->ID, "uColor"), 0.35f, 0.35f, 0.4f);
-        gridVAO_->bind();
-        glDrawArrays(GL_LINES, 0, gridVertexCount_);
-        gridVAO_->unbind();
-    }
-
-    void OpenGLRenderer::drawAxes() const
-    {
-        if (!axesVAO_)
-        {
-            return;
-        }
-
-        axesVAO_->bind();
-
-        glUniform3f(glGetUniformLocation(shader_->ID, "uColor"), 1.0f, 0.0f, 0.0f); // X - red
-        glDrawArrays(GL_LINES, 0, 2);
-
-        glUniform3f(glGetUniformLocation(shader_->ID, "uColor"), 0.0f, 1.0f, 0.0f); // Y - green
-        glDrawArrays(GL_LINES, 2, 2);
-
-        glUniform3f(glGetUniformLocation(shader_->ID, "uColor"), 0.0f, 0.4f, 1.0f); // Z - blue
-        glDrawArrays(GL_LINES, 4, 2);
-
-        axesVAO_->unbind();
     }
 
     void OpenGLRenderer::errorCallback(int error, const char *description)
