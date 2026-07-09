@@ -5,14 +5,13 @@
 namespace renderer
 {
 
-class Camera
-{
-public:
-    void setPose(const cv::Mat& pose);
-    const cv::Mat& pose() const;
+    class Camera
+    {
+    public:
+        void setPose(const cv::Mat &pose);
+        const cv::Mat &pose() const;
 
-private:
-    cv::Mat pose_;
-};
-
+    private:
+        cv::Mat pose_;
+    };
 }

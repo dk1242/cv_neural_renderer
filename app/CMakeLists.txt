@@ -14,4 +14,5 @@ target_link_libraries(
     vision
     geometry
     slam
+    renderer
 )

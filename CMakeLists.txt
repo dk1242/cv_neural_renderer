@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.20)
 project(
     VisionEngine
     VERSION 0.1
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
@@ -19,6 +19,7 @@ add_subdirectory(core)
 add_subdirectory(vision)
 add_subdirectory(geometry)
 add_subdirectory(slam)
+add_subdirectory(renderer)
 add_subdirectory(app)
 
 install(TARGETS VisionEngineApp
