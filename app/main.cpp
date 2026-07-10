@@ -89,8 +89,8 @@ void testVisualOdometry()
     visualOdometry.setCameraCenters();
 
     std::vector<cv::Point3d> mapPoints;
-    mapPoints.reserve(visualOdometry.mapPoints().size());
-    for (const auto &point : visualOdometry.mapPoints())
+    mapPoints.reserve(visualOdometry.map().points().size());
+    for (const auto &[id, point] : visualOdometry.map().points())
     {
         mapPoints.push_back(point.position);
     }

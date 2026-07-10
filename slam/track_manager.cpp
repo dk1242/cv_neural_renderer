@@ -110,6 +110,17 @@ const std::unordered_map<slam::TrackId, slam::FeatureTrack> &slam::TrackManager:
     return tracks_;
 }
 
+bool slam::TrackManager::linkTrackToMapPoint(TrackId trackId, MapPointId mapPointId)
+{
+    const auto it = tracks_.find(trackId);
+    if (it == tracks_.end())
+    {
+        return false;
+    }
+    it->second.setMapPointId(mapPointId);
+    return true;
+}
+
 size_t slam::TrackManager::activeTrackCount() const
 {
     size_t count = 0;

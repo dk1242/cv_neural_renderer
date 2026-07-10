@@ -5,6 +5,8 @@ target_sources(slam
     visual_odometry.cpp
     feature_track.cpp
     track_manager.cpp
+    map.cpp
+    mapping.cpp
 )
 
 target_include_directories(slam

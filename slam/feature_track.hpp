@@ -22,6 +22,16 @@ namespace slam
         vision::OrbDescriptor descriptor;
     };
 
+    // Camera pose in world frame (camera-to-world), as opposed to
+    // geometry::CameraPose which stores a relative (world-to-camera-style)
+    // R/t between two views. Shared between VisualOdometry and Mapping so
+    // both can hand poses to one another without a header cycle.
+    struct CameraPose
+    {
+        cv::Mat Rwc;
+        cv::Mat twc;
+    };
+
     // One inlier match expressed as the pair of Observations it produced,
     // one in the previous frame and one in the current frame. This is the
     // vocabulary TrackManager operates on -- callers translate

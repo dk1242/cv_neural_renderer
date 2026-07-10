@@ -98,54 +98,24 @@ void slam::VisualOdometry::logFrameStats(size_t matchCount, std::optional<size_t
               << elapsedMs << " ms" << std::endl;
 }
 
-void slam::VisualOdometry::triangulateCurrentFrame(const geometry::CameraPose &relativePose,
-                                                   std::vector<cv::Point2d> &inlierPoints1, std::vector<cv::Point2d> &inlierPoints2)
+void slam::VisualOdometry::logMappingStats(const Mapping::UpdateStats &mappingStats) const
 {
-    if (relativePose.R.empty() || relativePose.t.empty())
+    std::cout << "Frame " << frameIndex_ << "\n\n"
+              << "Tracks\n"
+              << "------\n"
+              << "Active:              " << trackManager_.activeTrackCount() << "\n"
+              << "Total:               " << trackManager_.totalTrackCount() << "\n\n"
+              << "Map\n"
+              << "---\n"
+              << "New MapPoints:       " << mappingStats.newMapPoints << "\n"
+              << "Total MapPoints:     " << mapping_.map().size() << "\n";
+
+    for (const auto &[trackId, mapPointId] : mappingStats.promotions)
     {
-        std::cerr << "triangulateCurrentFrame: empty relative pose, skipping" << std::endl;
-        return;
+        std::cout << "Track " << trackId << " -> MapPoint " << mapPointId << '\n';
     }
 
-    if (cameraMatrix_.empty())
-    {
-        std::cerr << "triangulateCurrentFrame: empty camera matrix, skipping" << std::endl;
-        return;
-    }
-
-    if (previousPose_.Rwc.empty() || previousPose_.twc.empty())
-    {
-        std::cerr << "triangulateCurrentFrame: previous pose uninitialized, skipping" << std::endl;
-        return;
-    }
-    cv::Mat P1 = cv::Mat::zeros(3, 4, CV_64F);
-    cv::Mat I = cv::Mat::eye(3, 3, CV_64F);
-    I.copyTo(P1.colRange(0, 3));
-
-    cv::Mat P2 = cv::Mat::zeros(3, 4, CV_64F);
-    relativePose.R.copyTo(P2.colRange(0, 3));
-    relativePose.t.copyTo(P2.col(3));
-
-    P1 = cameraMatrix_ * P1;
-    P2 = cameraMatrix_ * P2;
-
-    for (size_t i = 0; i < inlierPoints1.size(); ++i)
-    {
-        cv::Point3d pointCamera1 = triangulator_.triangulatePoint(inlierPoints1[i], inlierPoints2[i], P1, P2);
-        if (pointCamera1.z <= 0.0)
-        {
-            continue;
-        }
-        cv::Mat Xc = (cv::Mat_<double>(3, 1) << pointCamera1.x, pointCamera1.y, pointCamera1.z);
-
-        cv::Mat Xw = previousPose_.Rwc * Xc +
-                     previousPose_.twc;
-
-        MapPoint point;
-        point.position = {Xw.at<double>(0), Xw.at<double>(1), Xw.at<double>(2)};
-
-        mapPoints_.push_back(point);
-    }
+    std::cout << std::endl;
 }
 
 void slam::VisualOdometry::processFrame(const cv::Mat &frame)
@@ -156,7 +126,6 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
         return;
     }
 
-    const auto start = std::chrono::high_resolution_clock::now();
     Frame currentFrame = createFrame(frame);
 
     if (cameraMatrix_.empty())
@@ -190,14 +159,9 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
 
     if (crossMatches.size() < 30)
     {
-        const auto trackStats = trackManager_.update({});
+        trackManager_.update({});
 
-        const auto end = std::chrono::high_resolution_clock::now();
-        const double elapsedMs =
-            std::chrono::duration<double, std::milli>(end - start).count();
-
-        logFrameStats(crossMatches.size(), std::nullopt, trackStats,
-                      "Skipped: insufficient matches", elapsedMs);
+        // logMappingStats(Mapping::UpdateStats{});
 
         setPreviousFrame(std::move(currentFrame));
         lastRelativePose_.reset();
@@ -241,8 +205,9 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
         }
     }
 
-    const auto trackStats = trackManager_.update(correspondences);
+    trackManager_.update(correspondences);
 
+    Mapping::UpdateStats mappingStats;
     bool validPose = true;
     int positiveDepthCount = 0;
     double rotationAngleDeg = 0.0;
@@ -284,7 +249,7 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
             else
             {
                 positiveDepthCount = poseRecovery_.countPositiveDepth(recoveredPose, inlierPoints1, inlierPoints2, cameraMatrix_);
-                triangulateCurrentFrame(recoveredPose, inlierPoints1, inlierPoints2);
+                mappingStats = mapping_.update(trackManager_, frameIndex_, recoveredPose, previousPose_, cameraMatrix_);
 
                 previousPose_ = currentPose_;
 
@@ -329,13 +294,8 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
         lastRelativePose_.reset();
     }
 
-    const auto end = std::chrono::high_resolution_clock::now();
-    const double elapsedMs =
-        std::chrono::duration<double, std::milli>(end - start).count();
+    // logMappingStats(mappingStats);
 
-    logFrameStats(crossMatches.size(), correspondences.size(), trackStats,
-                  validPose ? std::string() : ("Pose: invalid (" + failureReason + ")"),
-                  elapsedMs);
     setPreviousFrame(std::move(currentFrame));
     ++frameIndex_;
 }
@@ -356,9 +316,9 @@ void slam::VisualOdometry::setCameraCenters()
     }
 }
 
-const std::vector<slam::MapPoint>& slam::VisualOdometry::mapPoints() const
+const slam::Map& slam::VisualOdometry::map() const
 {
-    return mapPoints_;
+    return mapping_.map();
 }
 
 const std::vector<cv::Point3d>& slam::VisualOdometry::cameraCenters() const
@@ -424,7 +384,7 @@ cv::Mat slam::VisualOdometry::drawTrajectory() const
         
         cv::line(canvas, pt0, pt1, cv::Scalar(0, 0, 255), 2);
     }
-    for (const auto &point : mapPoints_)
+    for (const auto &[id, point] : mapping_.map().points())
     {
         cv::Point pt(centerX + point.position.x * scale,
                      centerY - point.position.z * scale);

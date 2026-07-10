@@ -10,20 +10,12 @@
 #include "vision/descriptor_matcher.h"
 #include "geometry/pose_recovery.h"
 #include "geometry/ransac.hpp"
-#include "geometry/triangulation.hpp"
+#include "slam/map.hpp"
+#include "slam/mapping.hpp"
 #include "slam/track_manager.hpp"
 
 namespace slam
 {
-    struct MapPoint
-    {
-        cv::Point3d position;
-    };
-    struct CameraPose
-    {
-        cv::Mat Rwc;
-        cv::Mat twc;
-    };
     struct Frame
     {
         cv::Mat image;
@@ -44,7 +36,7 @@ namespace slam
         const std::optional<RelativePose> &lastRelativePose() const;
         void setCameraCenters();
         cv::Mat drawTrajectory() const;
-        const std::vector<MapPoint>& mapPoints() const;
+        const Map& map() const;
         const std::vector<cv::Point3d>& cameraCenters() const;
         const CameraPose& currentPose() const;
         const TrackManager& trackManager() const;
@@ -59,7 +51,6 @@ namespace slam
         slam::CameraPose previousPose_;
         std::vector<CameraPose> trajectory_;
         std::vector<cv::Point3d> cameraCenters_;
-        std::vector<MapPoint> mapPoints_;
 
         vision::FastCornerDetector fastDetector_;
         vision::OrbExtractor orbExtractor_;
@@ -67,15 +58,15 @@ namespace slam
         geometry::RansacFundamental fundamentalRansac_;
         geometry::EssentialMatrixEstimator essentialEstimator_;
         geometry::PoseRecovery poseRecovery_;
-        geometry::Triangulator triangulator_;
         TrackManager trackManager_;
+        Mapping mapping_;
 
         Frame createFrame(const cv::Mat &image);
         void setPreviousFrame(Frame frame);
-        void triangulateCurrentFrame(const geometry::CameraPose &relativePose, std::vector<cv::Point2d> &inlierPoints1, std::vector<cv::Point2d> &inlierPoints2);
         Observation makeObservation(FrameId frameId, size_t keypointIndex, const Frame &frame) const;
         void logFrameStats(size_t matchCount, std::optional<size_t> inlierCount,
                             const TrackManager::UpdateStats &trackStats,
                             const std::string &statusLine, double elapsedMs) const;
+        void logMappingStats(const Mapping::UpdateStats &mappingStats) const;
     };
 }

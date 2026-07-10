@@ -34,6 +34,12 @@ namespace slam
 
         UpdateStats update(const std::vector<Correspondence> &correspondences);
 
+        // Links an existing track to a MapPoint once Mapping has promoted
+        // it. Kept as a setter on TrackManager (rather than exposing
+        // mutable tracks()) so FeatureTrack ownership stays exclusively
+        // with TrackManager.
+        bool linkTrackToMapPoint(TrackId trackId, MapPointId mapPointId);
+
         const std::unordered_map<TrackId, FeatureTrack> &tracks() const;
         size_t activeTrackCount() const;
         size_t terminatedTrackCount() const;
