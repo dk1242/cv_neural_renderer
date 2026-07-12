@@ -1,5 +1,7 @@
 #include "slam/mapping.hpp"
 
+#include <utility>
+
 slam::Mapping::UpdateStats slam::Mapping::update(TrackManager &trackManager, FrameId currentFrameId,
                                                  const geometry::CameraPose &relativePose,
                                                  const CameraPose &previousWorldPose,
@@ -70,6 +72,31 @@ std::optional<cv::Point3d> slam::Mapping::triangulateWorldPoint(
     const cv::Mat Xw = previousWorldPose.Rwc * Xc + previousWorldPose.twc;
 
     return cv::Point3d{Xw.at<double>(0), Xw.at<double>(1), Xw.at<double>(2)};
+}
+
+bool slam::Mapping::shouldCreateKeyframe(const CameraPose &currentPose) const
+{
+    if (!lastKeyframePose_ || currentPose.Rwc.empty() || currentPose.twc.empty())
+    {
+        return true;
+    }
+
+    const double translation = cv::norm(currentPose.twc - lastKeyframePose_->twc);
+
+    const cv::Mat relativeRotation = lastKeyframePose_->Rwc.t() * currentPose.Rwc;
+    cv::Mat rotationVector;
+    cv::Rodrigues(relativeRotation, rotationVector);
+    const double rotationDeg = cv::norm(rotationVector) * 180.0 / CV_PI;
+
+    return translation > keyframeTranslationThreshold_ || rotationDeg > keyframeRotationThresholdDeg_;
+}
+
+slam::KeyframeId slam::Mapping::createKeyframe(FrameId sourceFrameId, const CameraPose &pose,
+                                                std::vector<vision::KeyPoint> keypoints,
+                                                std::vector<vision::OrbDescriptor> descriptors)
+{
+    lastKeyframePose_ = pose;
+    return map_.createKeyframe(sourceFrameId, pose, std::move(keypoints), std::move(descriptors));
 }
 
 const slam::Map &slam::Mapping::map() const

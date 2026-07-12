@@ -7,6 +7,7 @@ target_sources(slam
     track_manager.cpp
     map.cpp
     mapping.cpp
+    keyframe.cpp
 )
 
 target_include_directories(slam

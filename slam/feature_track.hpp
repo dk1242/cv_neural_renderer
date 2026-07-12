@@ -13,6 +13,7 @@ namespace slam
     using TrackId = std::uint64_t;
     using FrameId = std::uint64_t;
     using MapPointId = std::uint64_t;
+    using KeyframeId = std::uint64_t;
 
     struct Observation
     {

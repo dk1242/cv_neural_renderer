@@ -28,3 +28,29 @@ size_t slam::Map::size() const
 {
     return points_.size();
 }
+
+slam::KeyframeId slam::Map::createKeyframe(FrameId sourceFrameId, CameraPose pose,
+                                            std::vector<vision::KeyPoint> keypoints,
+                                            std::vector<vision::OrbDescriptor> descriptors)
+{
+    const KeyframeId id = nextKeyframeId_++;
+    keyframes_.emplace(id, Keyframe{id, sourceFrameId, std::move(pose),
+                                     std::move(keypoints), std::move(descriptors)});
+    return id;
+}
+
+const slam::Keyframe *slam::Map::getKeyframe(KeyframeId id) const
+{
+    const auto it = keyframes_.find(id);
+    return it == keyframes_.end() ? nullptr : &it->second;
+}
+
+void slam::Map::removeKeyframe(KeyframeId id)
+{
+    keyframes_.erase(id);
+}
+
+const std::unordered_map<slam::KeyframeId, slam::Keyframe> &slam::Map::keyframes() const
+{
+    return keyframes_;
+}

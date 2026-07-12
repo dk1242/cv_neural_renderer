@@ -31,6 +31,18 @@ namespace slam
                            const CameraPose &previousWorldPose,
                            const cv::Mat &cameraMatrix);
 
+        // Motion-based keyframe insertion: true once the camera has moved
+        // far enough (translation) or turned enough (rotation) since the
+        // last KeyFrame that the new viewpoint is likely to add real
+        // triangulation/mapping information. Always true before the first
+        // KeyFrame exists. Will grow map-aware terms (tracked/new MapPoint
+        // counts) once KeyFrames are linked to MapPoints via observations.
+        bool shouldCreateKeyframe(const CameraPose &currentPose) const;
+
+        KeyframeId createKeyframe(FrameId sourceFrameId, const CameraPose &pose,
+                                  std::vector<vision::KeyPoint> keypoints,
+                                  std::vector<vision::OrbDescriptor> descriptors);
+
         const Map &map() const;
 
     private:
@@ -41,5 +53,9 @@ namespace slam
 
         Map map_;
         geometry::Triangulator triangulator_;
+
+        std::optional<CameraPose> lastKeyframePose_;
+        double keyframeTranslationThreshold_ = 3.0;
+        double keyframeRotationThresholdDeg_ = 15.0;
     };
 }

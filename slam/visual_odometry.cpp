@@ -144,6 +144,14 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
         lastRelativePose_.reset();
         std::cout << "Loaded first frame with "
                   << previousFrame_.keypoints.size() << " keypoints" << std::endl;
+
+        if (mapping_.shouldCreateKeyframe(currentPose_))
+        {
+            const KeyframeId keyframeId = mapping_.createKeyframe(
+                frameIndex_, currentPose_, previousFrame_.keypoints, previousFrame_.descriptors);
+            std::cout << "Frame " << frameIndex_ << " -> Created KF" << keyframeId << std::endl;
+        }
+
         ++frameIndex_;
         return;
     }
@@ -284,6 +292,13 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
                     }
 
                     lastRelativePose_ = RelativePose{recoveredPose.R.clone(), recoveredPose.t.clone(), ransacResult.inlierCount};
+
+                    if (mapping_.shouldCreateKeyframe(currentPose_))
+                    {
+                        const KeyframeId keyframeId = mapping_.createKeyframe(
+                            frameIndex_, currentPose_, currentFrame.keypoints, currentFrame.descriptors);
+                        std::cout << "Frame " << frameIndex_ << " -> Created KF" << keyframeId << std::endl;
+                    }
                 }
             }
         }

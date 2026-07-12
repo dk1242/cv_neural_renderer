@@ -4,6 +4,7 @@
 #include <unordered_map>
 
 #include "slam/feature_track.hpp"
+#include "slam/keyframe.hpp"
 
 namespace slam
 {
@@ -31,8 +32,19 @@ namespace slam
         const std::unordered_map<MapPointId, MapPoint> &points() const;
         size_t size() const;
 
+        KeyframeId createKeyframe(FrameId sourceFrameId, CameraPose pose,
+                                  std::vector<vision::KeyPoint> keypoints,
+                                  std::vector<vision::OrbDescriptor> descriptors);
+        const Keyframe *getKeyframe(KeyframeId id) const;
+        void removeKeyframe(KeyframeId id);
+
+        const std::unordered_map<KeyframeId, Keyframe> &keyframes() const;
+
     private:
         std::unordered_map<MapPointId, MapPoint> points_;
         MapPointId nextId_ = 0;
+
+        std::unordered_map<KeyframeId, Keyframe> keyframes_;
+        KeyframeId nextKeyframeId_ = 0;
     };
 }
