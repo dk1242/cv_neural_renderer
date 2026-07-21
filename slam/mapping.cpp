@@ -1,5 +1,6 @@
 #include "slam/mapping.hpp"
 
+#include <iostream>
 #include <utility>
 
 slam::Mapping::UpdateStats slam::Mapping::update(TrackManager &trackManager, FrameId currentFrameId,
@@ -45,13 +46,25 @@ slam::Mapping::UpdateStats slam::Mapping::update(TrackManager &trackManager, Fra
         const MapPointId mapPointId = map_.createPoint(*worldPoint, track.observations().size());
         trackManager.linkTrackToMapPoint(trackId, mapPointId);
 
+        // Only observations whose source Frame was promoted to a KeyFrame
+        // become part of the MapPoint's permanent observation set -- the
+        // rest were tracking-only frames and leave no trace here.
+        std::vector<KeyframeId> keyframesObserved;
+        for (const auto &observation : track.observations())
+        {
+            const auto keyframeId = map_.keyframeForFrame(observation.frameId);
+            if (!keyframeId)
+            {
+                continue;
+            }
+
+            map_.addObservation(mapPointId,
+                                 MapObservation{*keyframeId, observation.keypointIndex, observation.pixel});
+            keyframesObserved.push_back(*keyframeId);
+        }
+
         ++stats.newMapPoints;
         stats.promotions.emplace_back(trackId, mapPointId);
-        // std::cout
-        //     << "Track " << track.id()
-        //     << " observations = "
-        //     << track.observations().size()
-        //     << '\n';
     }
 
     return stats;

@@ -257,8 +257,8 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
             else
             {
                 positiveDepthCount = poseRecovery_.countPositiveDepth(recoveredPose, inlierPoints1, inlierPoints2, cameraMatrix_);
-                mappingStats = mapping_.update(trackManager_, frameIndex_, recoveredPose, previousPose_, cameraMatrix_);
 
+                const CameraPose previousWorldPoseForMapping = previousPose_;
                 previousPose_ = currentPose_;
 
                 cv::Mat R12 = recoveredPose.R.t();
@@ -300,6 +300,12 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
                         std::cout << "Frame " << frameIndex_ << " -> Created KF" << keyframeId << std::endl;
                     }
                 }
+
+                // Runs after this frame's KeyFrame (if any) has been created,
+                // so newly promoted MapPoints can pick up an observation on
+                // frameIndex_ itself via Map::keyframeForFrame instead of
+                // always missing the frame that triggered the promotion.
+                mappingStats = mapping_.update(trackManager_, frameIndex_, recoveredPose, previousWorldPoseForMapping, cameraMatrix_);
             }
         }
     }

@@ -34,3 +34,29 @@ const std::vector<vision::OrbDescriptor> &slam::Keyframe::descriptors() const
 {
     return descriptors_;
 }
+
+void slam::Keyframe::addObservation(MapPointId mapPointId, const MapObservation &observation)
+{
+    observations_[mapPointId] = observation;
+}
+
+void slam::Keyframe::removeObservation(MapPointId mapPointId)
+{
+    observations_.erase(mapPointId);
+}
+
+bool slam::Keyframe::hasObservation(MapPointId mapPointId) const
+{
+    return observations_.find(mapPointId) != observations_.end();
+}
+
+const slam::MapObservation *slam::Keyframe::observation(MapPointId mapPointId) const
+{
+    const auto it = observations_.find(mapPointId);
+    return it == observations_.end() ? nullptr : &it->second;
+}
+
+size_t slam::Keyframe::numObservations() const
+{
+    return observations_.size();
+}
