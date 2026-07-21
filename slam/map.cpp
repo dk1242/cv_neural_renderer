@@ -31,6 +31,11 @@ size_t slam::MapPoint::numObservations() const
     return observations_.size();
 }
 
+const std::unordered_map<slam::KeyframeId, slam::MapObservation> &slam::MapPoint::observations() const
+{
+    return observations_;
+}
+
 slam::MapPointId slam::Map::createPoint(const cv::Point3d &position, size_t observationCount)
 {
     const MapPointId id = nextId_++;

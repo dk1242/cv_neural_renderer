@@ -7,6 +7,7 @@
 
 #include "geometry/pose_recovery.h"
 #include "geometry/triangulation.hpp"
+#include "slam/covisibility_graph.hpp"
 #include "slam/map.hpp"
 #include "slam/track_manager.hpp"
 
@@ -44,6 +45,7 @@ namespace slam
                                   std::vector<vision::OrbDescriptor> descriptors);
 
         const Map &map() const;
+        const CovisibilityGraph &covisibilityGraph() const;
 
     private:
         std::optional<cv::Point3d> triangulateWorldPoint(
@@ -52,6 +54,7 @@ namespace slam
             const cv::Mat &cameraMatrix, const CameraPose &previousWorldPose);
 
         Map map_;
+        CovisibilityGraph covisibilityGraph_;
         geometry::Triangulator triangulator_;
 
         std::optional<CameraPose> lastKeyframePose_;

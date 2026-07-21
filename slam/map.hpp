@@ -31,6 +31,7 @@ namespace slam
         bool hasObservation(KeyframeId keyframeId) const;
         const MapObservation *observation(KeyframeId keyframeId) const;
         size_t numObservations() const;
+        const std::unordered_map<KeyframeId, MapObservation> &observations() const;
 
     private:
         std::unordered_map<KeyframeId, MapObservation> observations_;

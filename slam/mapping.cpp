@@ -9,6 +9,7 @@ slam::Mapping::UpdateStats slam::Mapping::update(TrackManager &trackManager, Fra
                                                  const cv::Mat &cameraMatrix)
 {
     UpdateStats stats;
+    bool mapChanged = false;
 
     if (relativePose.R.empty() || relativePose.t.empty() ||
         previousWorldPose.Rwc.empty() || previousWorldPose.twc.empty() ||
@@ -65,6 +66,12 @@ slam::Mapping::UpdateStats slam::Mapping::update(TrackManager &trackManager, Fra
 
         ++stats.newMapPoints;
         stats.promotions.emplace_back(trackId, mapPointId);
+        mapChanged = true;
+    }
+
+    if (mapChanged)
+    {
+        covisibilityGraph_.rebuild(map_);
     }
 
     return stats;
@@ -115,4 +122,9 @@ slam::KeyframeId slam::Mapping::createKeyframe(FrameId sourceFrameId, const Came
 const slam::Map &slam::Mapping::map() const
 {
     return map_;
+}
+
+const slam::CovisibilityGraph &slam::Mapping::covisibilityGraph() const
+{
+    return covisibilityGraph_;
 }
