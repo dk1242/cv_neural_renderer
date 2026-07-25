@@ -60,3 +60,8 @@ size_t slam::Keyframe::numObservations() const
 {
     return observations_.size();
 }
+
+const std::unordered_map<slam::MapPointId, slam::MapObservation> &slam::Keyframe::observations() const
+{
+    return observations_;
+}

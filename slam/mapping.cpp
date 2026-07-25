@@ -18,6 +18,32 @@ slam::Mapping::UpdateStats slam::Mapping::update(TrackManager &trackManager, Fra
         return stats;
     }
 
+    const auto currentKeyframeId = map_.keyframeForFrame(currentFrameId);
+
+    // Phase 1: tracks already linked to a MapPoint just pick up this frame's
+    // observation -- the landmark already exists, so this is a plain
+    // observation update, not a re-triangulation.
+    if (currentKeyframeId)
+    {
+        for (const auto &[trackId, track] : trackManager.tracks())
+        {
+            if (!track.active() || !track.mapPointId() ||
+                track.lastObservation().frameId != currentFrameId)
+            {
+                continue;
+            }
+
+            const auto &observation = track.lastObservation();
+            if (map_.addObservation(*track.mapPointId(),
+                                    MapObservation{*currentKeyframeId, observation.keypointIndex, observation.pixel}))
+            {
+                mapChanged = true;
+            }
+        }
+    }
+
+    // Phase 2: tracks with enough baseline but no MapPoint yet get
+    // triangulated and promoted for the first time.
     const geometry::CameraPose identityPose{cv::Mat::eye(3, 3, CV_64F), cv::Mat::zeros(3, 1, CV_64F)};
 
     for (const auto &[trackId, track] : trackManager.tracks())
@@ -116,10 +142,17 @@ slam::KeyframeId slam::Mapping::createKeyframe(FrameId sourceFrameId, const Came
                                                 std::vector<vision::OrbDescriptor> descriptors)
 {
     lastKeyframePose_ = pose;
-    return map_.createKeyframe(sourceFrameId, pose, std::move(keypoints), std::move(descriptors));
+    KeyframeId id = map_.createKeyframe(sourceFrameId, pose, std::move(keypoints), std::move(descriptors));
+    covisibilityGraph_.rebuild(map_);
+    return id;
 }
 
 const slam::Map &slam::Mapping::map() const
+{
+    return map_;
+}
+
+slam::Map &slam::Mapping::map()
 {
     return map_;
 }

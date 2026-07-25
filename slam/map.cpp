@@ -5,9 +5,14 @@ slam::MapPoint::MapPoint(MapPointId id, cv::Point3d position, size_t observation
 {
 }
 
-void slam::MapPoint::addObservation(const MapObservation& observation)
+bool slam::MapPoint::addObservation(const MapObservation& observation)
 {
-    observations_[observation.keyframeId] = observation;
+    const auto [it, inserted] = observations_.try_emplace(observation.keyframeId, observation);
+    if (!inserted)
+    {
+        it->second = observation;
+    }
+    return inserted;
 }
 
 void slam::MapPoint::removeObservation(KeyframeId keyframeId)
@@ -55,21 +60,23 @@ void slam::Map::remove(MapPointId id)
     points_.erase(id);
 }
 
-void slam::Map::addObservation(MapPointId mapPointId, const MapObservation &observation)
+bool slam::Map::addObservation(MapPointId mapPointId, const MapObservation &observation)
 {
     const auto pointIt = points_.find(mapPointId);
     if (pointIt == points_.end())
     {
-        return;
+        return false;
     }
 
-    pointIt->second.addObservation(observation);
+    const bool inserted = pointIt->second.addObservation(observation);
 
     const auto keyframeIt = keyframes_.find(observation.keyframeId);
     if (keyframeIt != keyframes_.end())
     {
         keyframeIt->second.addObservation(mapPointId, observation);
     }
+
+    return inserted;
 }
 
 const std::unordered_map<slam::MapPointId, slam::MapPoint> &slam::Map::points() const

@@ -45,6 +45,7 @@ namespace slam
                                   std::vector<vision::OrbDescriptor> descriptors);
 
         const Map &map() const;
+        Map &map();
         const CovisibilityGraph &covisibilityGraph() const;
 
     private:

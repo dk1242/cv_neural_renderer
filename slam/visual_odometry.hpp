@@ -10,6 +10,7 @@
 #include "vision/descriptor_matcher.h"
 #include "geometry/pose_recovery.h"
 #include "geometry/ransac.hpp"
+#include "slam/localmapping.hpp"
 #include "slam/map.hpp"
 #include "slam/mapping.hpp"
 #include "slam/track_manager.hpp"
@@ -32,6 +33,8 @@ namespace slam
     class VisualOdometry
     {
     public:
+        VisualOdometry();
+
         void processFrame(const cv::Mat &frame);
         const std::optional<RelativePose> &lastRelativePose() const;
         void setCameraCenters();
@@ -60,6 +63,7 @@ namespace slam
         geometry::PoseRecovery poseRecovery_;
         TrackManager trackManager_;
         Mapping mapping_;
+        LocalMapping localMapping_;
 
         Frame createFrame(const cv::Mat &image);
         void setPreviousFrame(Frame frame);

@@ -25,8 +25,10 @@ namespace slam
 
         // Per-Keyframe sightings of this point, keyed by KeyframeId. Kept
         // private -- mutate only through these methods -- so a caller can't
-        // desync the map from the KeyframeId it's keyed under.
-        void addObservation(const MapObservation& observation);
+        // desync the map from the KeyframeId it's keyed under. Returns
+        // whether this KeyframeId was new (false if it already had an
+        // observation here, which is just refreshed in place).
+        bool addObservation(const MapObservation& observation);
         void removeObservation(KeyframeId keyframeId);
         bool hasObservation(KeyframeId keyframeId) const;
         const MapObservation *observation(KeyframeId keyframeId) const;
@@ -47,11 +49,12 @@ namespace slam
         const MapPoint *find(MapPointId id) const;
         void remove(MapPointId id);
 
-        // Adds an observation to an already-created MapPoint. No-op if
-        // mapPointId is unknown -- keeps the "invariants live inside
-        // MapPoint" rule intact while letting Mapping stay ignorant of
-        // MapPoint's internals.
-        void addObservation(MapPointId mapPointId, const MapObservation &observation);
+        // Adds an observation to an already-created MapPoint. No-op (returns
+        // false) if mapPointId is unknown -- keeps the "invariants live
+        // inside MapPoint" rule intact while letting Mapping stay ignorant of
+        // MapPoint's internals. Otherwise returns whatever MapPoint::addObservation
+        // reports, i.e. whether this was a genuinely new sighting.
+        bool addObservation(MapPointId mapPointId, const MapObservation &observation);
 
         const std::unordered_map<MapPointId, MapPoint> &points() const;
         size_t size() const;

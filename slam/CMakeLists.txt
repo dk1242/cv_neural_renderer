@@ -9,6 +9,7 @@ target_sources(slam
     mapping.cpp
     keyframe.cpp
     covisibility_graph.cpp
+    localmapping.cpp
 )
 
 target_include_directories(slam

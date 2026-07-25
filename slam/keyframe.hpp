@@ -37,6 +37,7 @@ public:
     bool hasObservation(MapPointId mapPointId) const;
     const MapObservation *observation(MapPointId mapPointId) const;
     size_t numObservations() const;
+    const std::unordered_map<MapPointId, MapObservation> &observations() const;
 
 private:
     KeyframeId id_;

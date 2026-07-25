@@ -21,6 +21,10 @@ namespace
     }
 }
 
+slam::VisualOdometry::VisualOdometry() : localMapping_(mapping_)
+{
+}
+
 slam::Frame slam::VisualOdometry::createFrame(const cv::Mat &image)
 {
     Frame frame;
@@ -149,6 +153,8 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
         {
             const KeyframeId keyframeId = mapping_.createKeyframe(
                 frameIndex_, currentPose_, previousFrame_.keypoints, previousFrame_.descriptors);
+            localMapping_.insertKeyframe(keyframeId);
+            localMapping_.process();
             std::cout << "Frame " << frameIndex_ << " -> Created KF" << keyframeId << std::endl;
         }
 
@@ -256,6 +262,7 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
             }
             else
             {
+                std::optional<KeyframeId> createdKeyframeId;
                 positiveDepthCount = poseRecovery_.countPositiveDepth(recoveredPose, inlierPoints1, inlierPoints2, cameraMatrix_);
 
                 const CameraPose previousWorldPoseForMapping = previousPose_;
@@ -297,6 +304,7 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
                     {
                         const KeyframeId keyframeId = mapping_.createKeyframe(
                             frameIndex_, currentPose_, currentFrame.keypoints, currentFrame.descriptors);
+                        createdKeyframeId = keyframeId;
                         std::cout << "Frame " << frameIndex_ << " -> Created KF" << keyframeId << std::endl;
                     }
                 }
@@ -306,6 +314,11 @@ void slam::VisualOdometry::processFrame(const cv::Mat &frame)
                 // frameIndex_ itself via Map::keyframeForFrame instead of
                 // always missing the frame that triggered the promotion.
                 mappingStats = mapping_.update(trackManager_, frameIndex_, recoveredPose, previousWorldPoseForMapping, cameraMatrix_);
+                if(createdKeyframeId)
+                {
+                    localMapping_.insertKeyframe(*createdKeyframeId);
+                    localMapping_.process();
+                }
             }
         }
     }
