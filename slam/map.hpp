@@ -23,6 +23,28 @@ namespace slam
         size_t observationCount = 1;
         bool active = true;
 
+        // Average unit viewing direction (observing camera center ->
+        // position) across all current observations -- kept up to date by
+        // Map::addObservation()/removeObservation(). Zero vector means "not
+        // yet established" (e.g. a single observation); callers should skip
+        // any check that depends on it rather than treat it as a real
+        // direction.
+        cv::Point3d normal = cv::Point3d(0.0, 0.0, 0.0);
+
+        // Range of observing-camera-to-point distances this MapPoint has
+        // actually been seen at, across all current observations -- kept up
+        // to date alongside normal. A candidate view whose distance falls
+        // far outside this range is seeing the point at a scale it's never
+        // been matched at before, so its descriptor is unlikely to match
+        // reliably. ORB-SLAM derives this from the ORB pyramid octave of
+        // each observation instead; we don't track per-point octave yet, so
+        // this is the plain observed min/max as a stand-in. minDistance ==
+        // maxDistance == 0.0 means "not yet established" (e.g. a single
+        // observation) -- skip the check rather than treat it as a real
+        // range.
+        double minDistance = 0.0;
+        double maxDistance = 0.0;
+
         // Per-Keyframe sightings of this point, keyed by KeyframeId. Kept
         // private -- mutate only through these methods -- so a caller can't
         // desync the map from the KeyframeId it's keyed under. Returns
@@ -56,6 +78,11 @@ namespace slam
         // reports, i.e. whether this was a genuinely new sighting.
         bool addObservation(MapPointId mapPointId, const MapObservation &observation);
 
+        // Symmetric counterpart to addObservation() -- drops the sighting
+        // from both the MapPoint and the KeyFrame side so neither is left
+        // referencing the other. No-op if either id is unknown.
+        void removeObservation(MapPointId mapPointId, KeyframeId keyframeId);
+
         const std::unordered_map<MapPointId, MapPoint> &points() const;
         size_t size() const;
 
@@ -73,6 +100,14 @@ namespace slam
         std::optional<KeyframeId> keyframeForFrame(FrameId frameId) const;
 
     private:
+        // Recomputes a MapPoint's normal and min/maxDistance together, in
+        // one pass over its current observations' KeyFrame camera centers
+        // -- mirrors ORB-SLAM's combined UpdateNormalAndDepth(). Called
+        // internally by addObservation()/removeObservation() so neither
+        // field ever goes stale; there is no public way to trigger this
+        // separately.
+        void updateNormalAndDistance(MapPointId mapPointId);
+
         std::unordered_map<MapPointId, MapPoint> points_;
         MapPointId nextId_ = 0;
 

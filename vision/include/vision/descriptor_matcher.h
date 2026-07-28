@@ -7,9 +7,9 @@ namespace vision
 {
     class DescriptorMatcher
     {
+    public:
         int hammingDistance(const vision::OrbDescriptor &desc1, const vision::OrbDescriptor &desc2) const;
 
-    public:
         std::vector<vision::Match> match(const std::vector<vision::OrbDescriptor> &descriptors1,
                                          const std::vector<vision::OrbDescriptor> &descriptors2) const;
         std::vector<vision::Match> crosscheckMatch(const std::vector<vision::OrbDescriptor> &descriptors1,

@@ -1,5 +1,8 @@
 #include "slam/map.hpp"
 
+#include <algorithm>
+#include <limits>
+
 slam::MapPoint::MapPoint(MapPointId id, cv::Point3d position, size_t observationCount, bool active)
     : id(id), position(position), observationCount(observationCount), active(active)
 {
@@ -76,7 +79,78 @@ bool slam::Map::addObservation(MapPointId mapPointId, const MapObservation &obse
         keyframeIt->second.addObservation(mapPointId, observation);
     }
 
+    updateNormalAndDistance(mapPointId);
+
     return inserted;
+}
+
+void slam::Map::removeObservation(MapPointId mapPointId, KeyframeId keyframeId)
+{
+    const auto pointIt = points_.find(mapPointId);
+    if (pointIt != points_.end())
+    {
+        pointIt->second.removeObservation(keyframeId);
+    }
+
+    const auto keyframeIt = keyframes_.find(keyframeId);
+    if (keyframeIt != keyframes_.end())
+    {
+        keyframeIt->second.removeObservation(mapPointId);
+    }
+
+    updateNormalAndDistance(mapPointId);
+}
+
+void slam::Map::updateNormalAndDistance(MapPointId mapPointId)
+{
+    const auto pointIt = points_.find(mapPointId);
+    if (pointIt == points_.end())
+    {
+        return;
+    }
+
+    MapPoint &point = pointIt->second;
+    cv::Point3d accumulatedDirection(0.0, 0.0, 0.0);
+    double minDistance = std::numeric_limits<double>::max();
+    double maxDistance = 0.0;
+    size_t count = 0;
+
+    for (const auto &[keyframeId, observation] : point.observations())
+    {
+        const auto keyframeIt = keyframes_.find(keyframeId);
+        if (keyframeIt == keyframes_.end())
+        {
+            continue;
+        }
+
+        const cv::Mat &twc = keyframeIt->second.pose().twc;
+        const cv::Point3d cameraCenter(twc.at<double>(0), twc.at<double>(1), twc.at<double>(2));
+
+        const cv::Point3d direction = point.position - cameraCenter;
+        const double distance = cv::norm(direction);
+        if (distance <= 0.0)
+        {
+            continue;
+        }
+
+        accumulatedDirection += direction * (1.0 / distance);
+        minDistance = std::min(minDistance, distance);
+        maxDistance = std::max(maxDistance, distance);
+        ++count;
+    }
+
+    if (count == 0)
+    {
+        point.normal = cv::Point3d(0.0, 0.0, 0.0);
+        point.minDistance = 0.0;
+        point.maxDistance = 0.0;
+        return;
+    }
+
+    const double accumulatedNorm = cv::norm(accumulatedDirection);
+    point.normal = accumulatedNorm > 0.0 ? accumulatedDirection * (1.0 / accumulatedNorm) : cv::Point3d(0.0, 0.0, 0.0);
+    point.minDistance = minDistance;
+    point.maxDistance = maxDistance;
 }
 
 const std::unordered_map<slam::MapPointId, slam::MapPoint> &slam::Map::points() const

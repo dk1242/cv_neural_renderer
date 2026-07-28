@@ -3,6 +3,7 @@
 #include <optional>
 #include <queue>
 
+#include "geometry/epipolar_geometry.hpp"
 #include "geometry/triangulation.hpp"
 #include "slam/feature_track.hpp"
 #include "slam/mapping.hpp"
@@ -124,6 +125,15 @@ namespace slam
         // "CreateNewMapPoints" step.
         TriangulationStats triangulateNewMapPoints(KeyframeId current, const LocalKeyFrameSet &localKeyframes);
 
+        // Projects every MapPoint in localMapPoints into currentKeyframeId
+        // and either (a) records a missed observation, when the projected
+        // feature slot isn't already claimed by a MapPoint, or (b) merges
+        // the two MapPoints, when it's claimed by a *different* one -- the
+        // ORB-SLAM "SearchInNeighbors"/Fuse step. Catches landmarks that got
+        // independently triangulated more than once for the same physical
+        // point.
+        void fuseMapPoints(KeyframeId currentKeyframeId, const LocalMapPointSet &localMapPoints);
+
     private:
         geometry::CameraPose computeRelativePose(const Keyframe &from, const Keyframe &to) const;
         geometry::CameraPose worldToCameraPose(const CameraPose &pose) const;
@@ -139,6 +149,48 @@ namespace slam
         TriangulationOutcome triangulateCorrespondence(
             const CandidateCorrespondence &correspondence, const KeyframePairContext &context);
         MapPointId insertMapPoint(const cv::Point3d &position, const CandidateCorrespondence &correspondence);
+
+        // True if point (already projected into keyframe as `projection`,
+        // by the caller -- shared with findProjectionMatches() so the
+        // projection itself is only computed once) is in front of the
+        // camera, inside the image bounds, within point's established
+        // observed-distance range, and not viewed from too oblique an
+        // angle relative to point's normal. The distance/angle checks are
+        // skipped while those fields are still unestablished (fresh
+        // points).
+        bool isVisible(const MapPoint &point, const Keyframe &keyframe, const geometry::ProjectionResult &projection) const;
+
+        // The observation whose descriptor has the smallest median Hamming
+        // distance to all the other observations' descriptors -- more
+        // robust than just picking the first observation, since any single
+        // sighting can be blurry or seen at an oblique angle. Returns
+        // nullptr if every KeyFrame that observed it is gone.
+        const vision::OrbDescriptor *representativeDescriptor(const MapPoint &point) const;
+
+        // Keypoint indices in `keyframe` within the projection search
+        // window of `projection`'s image point, passing the Hamming
+        // distance descriptor threshold -- sorted best (lowest distance)
+        // first, with an ambiguity check (best-vs-second-best ratio) that
+        // discards the whole match if the two closest candidates are too
+        // close to call. Empty if nothing nearby matches well enough or the
+        // best two matches are too ambiguous.
+        std::vector<size_t> findProjectionMatches(
+            const MapPoint &point, const Keyframe &keyframe, const geometry::ProjectionResult &projection) const;
+
+        // The MapPoint to keep when two MapPoints turn out to be duplicate
+        // observations of the same physical point: more observations wins;
+        // ties broken by lower id (the older point).
+        MapPointId chooseSurvivor(MapPointId lhs, MapPointId rhs) const;
+
+        // Moves every observation from `duplicate` onto `survivor`
+        // (skipping KeyFrames that already see `survivor` through a
+        // different feature) and erases `duplicate` from the Map.
+        void mergeMapPoints(MapPointId survivor, MapPointId duplicate);
+
+        // Rebuilds the CovisibilityGraph once after a batch of fusions --
+        // the Observation Graph itself is kept consistent incrementally by
+        // mergeMapPoints()/Map::addObservation() as each fusion happens.
+        void updateGraphsAfterFusion();
 
         Mapping &mapping_;
 
