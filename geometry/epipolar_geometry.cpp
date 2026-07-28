@@ -74,3 +74,17 @@ double geometry::EpipolarGeometry::parallaxAngle(const cv::Point3d &pointWorld, 
     double cosParallax = std::clamp(dotProduct / (norm1 * norm2), -1.0, 1.0);
     return std::acos(cosParallax);
 }
+
+geometry::EpipolarLine geometry::EpipolarGeometry::computeEpipolarLine(const cv::Mat &F, const cv::Point2d &point)
+{
+    const cv::Mat x = (cv::Mat_<double>(3, 1) << point.x, point.y, 1.0);
+    const cv::Mat l = F * x;
+
+    return EpipolarLine{l.at<double>(0), l.at<double>(1), l.at<double>(2)};
+}
+
+double geometry::EpipolarGeometry::distanceToLine(const EpipolarLine &line, const cv::Point2d &point)
+{
+    return std::abs(line.a * point.x + line.b * point.y + line.c) /
+           std::sqrt(line.a * line.a + line.b * line.b);
+}

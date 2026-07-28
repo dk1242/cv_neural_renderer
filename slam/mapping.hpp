@@ -47,6 +47,13 @@ namespace slam
         const Map &map() const;
         Map &map();
         const CovisibilityGraph &covisibilityGraph() const;
+        const cv::Mat &cameraMatrix() const;
+
+        // Rebuilds the CovisibilityGraph from the current Map state. update()
+        // and createKeyframe() already trigger this themselves; expose it
+        // publicly for callers (LocalMapping) that mutate the Map directly
+        // via map() and would otherwise leave the graph stale.
+        void refreshCovisibilityGraph();
 
     private:
         std::optional<cv::Point3d> triangulateWorldPoint(
@@ -57,6 +64,7 @@ namespace slam
         Map map_;
         CovisibilityGraph covisibilityGraph_;
         geometry::Triangulator triangulator_;
+        cv::Mat cameraMatrix_;
 
         std::optional<CameraPose> lastKeyframePose_;
         double keyframeTranslationThreshold_ = 3.0;

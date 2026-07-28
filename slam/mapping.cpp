@@ -18,6 +18,8 @@ slam::Mapping::UpdateStats slam::Mapping::update(TrackManager &trackManager, Fra
         return stats;
     }
 
+    cameraMatrix_ = cameraMatrix;
+
     const auto currentKeyframeId = map_.keyframeForFrame(currentFrameId);
 
     // Phase 1: tracks already linked to a MapPoint just pick up this frame's
@@ -160,4 +162,14 @@ slam::Map &slam::Mapping::map()
 const slam::CovisibilityGraph &slam::Mapping::covisibilityGraph() const
 {
     return covisibilityGraph_;
+}
+
+const cv::Mat &slam::Mapping::cameraMatrix() const
+{
+    return cameraMatrix_;
+}
+
+void slam::Mapping::refreshCovisibilityGraph()
+{
+    covisibilityGraph_.rebuild(map_);
 }
